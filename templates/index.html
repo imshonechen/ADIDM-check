@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADIDM Check - IDM Crack Version Monitor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #e0e0e0;
+        }
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 32px;
+        }
+        .card {
+            background: rgba(255,255,255,0.06);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 32px 40px;
+            max-width: 560px;
+            margin: 0 auto;
+            text-align: left;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            font-size: 14px;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label {
+            color: #888;
+            flex-shrink: 0;
+            margin-right: 16px;
+        }
+        .info-value {
+            color: #e0e0e0;
+            word-break: break-all;
+            text-align: right;
+        }
+        .info-value a {
+            color: #67a5ff;
+            text-decoration: none;
+        }
+        .info-value a:hover { text-decoration: underline; }
+        .version-badge {
+            display: inline-block;
+            background: #4361ee;
+            color: #fff;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .sha256-text {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 11px;
+            color: #bbb;
+        }
+        .changelog-box {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+            text-align: left;
+        }
+        .changelog-title {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .changelog-content {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 12px;
+            color: #ccc;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .loading { color: #888; text-align: center; padding: 40px 0; }
+        .error-msg { color: #e63946; text-align: center; padding: 40px 0; }
+        .source-warn {
+            background: rgba(230,57,70,0.15);
+            border: 1px solid rgba(230,57,70,0.3);
+            border-radius: 8px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: #e63946;
+            text-align: center;
+        }
+        .footer {
+            margin-top: 32px;
+            font-size: 12px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ADIDM Check</h1>
+        <p class="subtitle">IDM Crack Version Monitor</p>
+        <div class="card" id="content">
+            <div class="loading" id="loading">Loading...</div>
+        </div>
+        <p class="footer">Auto-checked daily</p>
+    </div>
+
+    <script>
+        (function() {
+            fetch('/api/latest')
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                    var el = document.getElementById('content');
+                    if (res.code !== 0) {
+                        el.innerHTML = '<div class="error-msg">' + (res.message || 'No data') + '</div>';
+                        return;
+                    }
+                    var d = res.data;
+                    var html = '';
+                    if (res.last_check_status === 'source_error') {
+                        html += '<div class="source-warn">Source site check failed. Data below may be outdated.</div>';
+                    }
+                    html += '<div class="info-row"><span class="info-label">Version</span><span class="info-value"><span class="version-badge">' + esc(d.version) + '</span></span></div>';
+                    html += '<div class="info-row"><span class="info-label">Filename</span><span class="info-value">' + esc(d.filename || '-') + '</span></div>';
+                    html += '<div class="info-row"><span class="info-label">Filesize</span><span class="info-value">' + esc(d.filesize || '-') + '</span></div>';
+                    html += '<div class="info-row"><span class="info-label">SHA256</span><span class="info-value sha256-text">' + esc(d.sha256 || '-') + '</span></div>';
+                    html += '<div class="info-row"><span class="info-label">Download</span><span class="info-value"><a href="' + esc(d.download_url) + '" target="_blank" rel="noopener">' + esc(d.download_url) + '</a></span></div>';
+                    if (d.direct_url) {
+                        html += '<div class="info-row"><span class="info-label">Direct Link</span><span class="info-value"><a href="' + esc(d.direct_url) + '" target="_blank" rel="noopener">' + esc(d.direct_url) + '</a></span></div>';
+                    }
+                    html += '<div class="info-row"><span class="info-label">Updated</span><span class="info-value">' + esc(d.created_at || '-') + '</span></div>';
+                    html += '<div class="info-row"><span class="info-label">Checked</span><span class="info-value">' + esc(res.last_checked || '-') + '</span></div>';
+                    if (d.changelog) {
+                        html += '<div class="changelog-box"><div class="changelog-title">Changelog</div><div class="changelog-content">' + esc(d.changelog) + '</div></div>';
+                    }
+                    el.innerHTML = html;
+                })
+                .catch(function() {
+                    document.getElementById('content').innerHTML = '<div class="error-msg">Failed to load data</div>';
+                });
+
+            function esc(s) {
+                if (!s) return '';
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(s));
+                return d.innerHTML;
+            }
+        })();
+    </script>
+</body>
+</html>

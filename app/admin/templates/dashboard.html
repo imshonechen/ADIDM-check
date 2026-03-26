@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+{% block title %}记录列表{% endblock %}
+{% block content %}
+<div class="top-bar">
+    <h2>版本记录</h2>
+    <div style="display:flex; align-items:center; gap:16px;">
+        <span style="color:#999; font-size:13px;">最近检测：{{ last_checked or '未检测' }}
+            {% if last_check_status == 'source_error' %}
+            <span style="color:#e63946; font-weight:600;">（源站异常）</span>
+            {% elif last_check_status == 'success' %}
+            <span style="color:#2ecc71;">（正常）</span>
+            {% endif %}
+        </span>
+        <form style="display:inline" method="POST" action="{{ url_for('admin.api_scrape') }}" id="scrapeForm">
+            <button type="button" class="btn btn-warning" onclick="doScrape()">手动抓取</button>
+        </form>
+        <a href="{{ url_for('admin.create') }}" class="btn btn-primary">新增记录</a>
+    </div>
+</div>
+
+<div class="card" style="padding: 0; overflow-x: auto;">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>版本号</th>
+                <th>文件名</th>
+                <th>文件大小</th>
+                <th>更新日志</th>
+                <th>状态</th>
+                <th>创建日期</th>
+                <th>更新日期</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in versions %}
+            <tr>
+                <td>{{ v.id }}</td>
+                <td>{{ v.version }}</td>
+                <td>{{ v.filename or '-' }}</td>
+                <td>{{ v.filesize or '-' }}</td>
+                <td style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ v.changelog or '' }}">{{ v.changelog[:50] + '...' if v.changelog and v.changelog|length > 50 else v.changelog or '-' }}</td>
+                <td>
+                    {% if v.is_featured %}
+                    <span class="badge badge-featured">展示中</span>
+                    {% endif %}
+                </td>
+                <td>{{ v.created_at }}</td>
+                <td>{{ v.updated_at }}</td>
+                <td class="actions">
+                    <a href="{{ url_for('admin.edit', version_id=v.id) }}" class="btn btn-primary btn-sm">编辑</a>
+                    {% if not v.is_featured %}
+                    <button class="btn btn-success btn-sm" onclick="setFeatured({{ v.id }})">设为展示</button>
+                    {% endif %}
+                    <button class="btn btn-danger btn-sm" onclick="deleteVersion({{ v.id }})">删除</button>
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not versions %}
+            <tr><td colspan="9" style="text-align:center; padding:24px; color:#999;">暂无记录</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+function setFeatured(id) {
+    if (!confirm('确定将此版本设为前台展示？')) return;
+    fetch('/admin/api/versions/' + id + '/feature', { method: 'PUT' })
+        .then(r => r.json())
+        .then(() => location.reload());
+}
+
+function deleteVersion(id) {
+    if (!confirm('确定删除此记录？此操作不可恢复。')) return;
+    fetch('/admin/api/versions/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(() => location.reload());
+}
+
+function doScrape() {
+    if (!confirm('确定手动触发一次抓取？')) return;
+    fetch('/admin/api/scrape', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.code === 0) {
+                var d = data.data;
+                var msg = '抓取完成：版本 ' + d.version;
+                if (d.is_new) msg += '（新版本）';
+                else if (d.is_updated) msg += '（源站有更新）';
+                else msg += '（无变化）';
+                alert(msg);
+                location.reload();
+            } else {
+                alert(data.message);
+                location.reload();
+            }
+        })
+        .catch(() => alert('请求失败'));
+}
+</script>
+{% endblock %}

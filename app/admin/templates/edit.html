@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block title %}{{ '编辑记录' if version else '新增记录' }}{% endblock %}
+{% block content %}
+<div class="card">
+    <h2 style="margin-bottom: 20px;">{{ '编辑记录 #' ~ version.id if version else '新增记录' }}</h2>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST">
+        <div class="form-group">
+            <label>版本号 *</label>
+            <input type="text" name="version" value="{{ version.version if version else '' }}" required placeholder="例如: 20.6">
+        </div>
+        <div class="form-group">
+            <label>下载地址 *</label>
+            <input type="text" name="download_url" value="{{ version.download_url if version else '' }}" required placeholder="https://...">
+        </div>
+        <div class="form-group">
+            <label>文件名</label>
+            <input type="text" name="filename" value="{{ version.filename if version and version.filename else '' }}" placeholder="例如: IDM_6.4x_Crack_v20.6.zip">
+        </div>
+        <div class="form-group">
+            <label>文件大小</label>
+            <input type="text" name="filesize" value="{{ version.filesize if version and version.filesize else '' }}" placeholder="例如: 65850 (Byte)">
+        </div>
+        <div class="form-group">
+            <label>SHA256</label>
+            <input type="text" name="sha256" value="{{ version.sha256 if version and version.sha256 else '' }}" placeholder="SHA256 哈希值">
+        </div>
+        <div class="form-group">
+            <label>直连地址</label>
+            <input type="text" name="direct_url" value="{{ version.direct_url if version and version.direct_url else '' }}" placeholder="文件直连下载地址">
+        </div>
+        <div class="form-group">
+            <label>更新日志</label>
+            <textarea name="changelog" rows="8" placeholder="Changelog 内容" style="width:100%; font-family: monospace; font-size: 13px;">{{ version.changelog if version and version.changelog else '' }}</textarea>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button type="submit" class="btn btn-primary">{{ '保存修改' if version else '新增' }}</button>
+            <a href="{{ url_for('admin.dashboard') }}" class="btn" style="background: #6c757d;">返回</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
