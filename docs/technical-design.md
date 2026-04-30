@@ -22,7 +22,7 @@ ADIDM-Check 是一个自动化版本监控站点，每日定时抓取 IDM Ali.Db
 | 前端 | HTML + CSS + JavaScript | 原生实现，无需框架 |
 | 管理后台 | Flask + Jinja2 模板 | 服务端渲染 |
 | 认证 | Flask-Login | 管理后台登录认证 |
-| 部署 | Gunicorn / Waitress | 生产环境 WSGI 服务器 |
+| 部署 | Docker Compose / GHCR / Gunicorn / Waitress | 容器和传统部署 |
 
 ### 核心依赖
 
@@ -33,6 +33,7 @@ APScheduler>=3.10
 Flask-Login>=0.6
 Werkzeug>=3.0
 curl_cffi>=0.14
+waitress>=3.0
 ```
 
 ---
@@ -66,6 +67,10 @@ ADIDM-check/
 │   │       └── edit.html        # 编辑/新增页面
 ├── templates/
 │   └── index.html               # 前台首页
+├── compose.yml                   # GHCR 镜像部署示例
+├── Dockerfile                    # 容器镜像构建文件
+├── .dockerignore                 # Docker 构建忽略文件
+├── .github/workflows/ghcr.yml    # GHCR 镜像构建发布 workflow
 ├── data/
 │   ├── adidm.db                 # SQLite 数据库文件（运行时生成）
 │   └── downloads/               # 下载的文件存储目录（运行时生成）
@@ -880,7 +885,56 @@ python run.py
 
 访问 `http://localhost:26300` 查看前台，`http://localhost:26300/admin` 进入管理后台。
 
-### 生产环境
+### Docker Compose（GHCR）
+
+推荐使用仓库提供的 `compose.yml` 部署：
+
+```yaml
+services:
+  adidm-check:
+    image: ghcr.io/imshonechen/adidm-check:latest
+    container_name: adidm-check
+    restart: unless-stopped
+    ports:
+      - "26300:26300"
+    environment:
+      SECRET_KEY: "change-this-to-a-random-secret-key"
+    volumes:
+      - ./data:/app/data
+```
+
+启动：
+
+```bash
+mkdir -p data
+docker compose up -d
+```
+
+初始化管理员：
+
+```bash
+docker compose exec adidm-check python run.py init-admin --username admin --password your_password
+```
+
+升级：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+容器内使用 Waitress 监听 `0.0.0.0:26300`。数据库和下载文件通过 `./data:/app/data` 持久化。
+
+GHCR 镜像由 `.github/workflows/ghcr.yml` 自动构建：
+
+- 推送 `main` 分支发布 `latest` 和 `sha-*` 标签。
+- 推送 `v*` Git 标签发布对应版本标签。
+- 镜像名为 `ghcr.io/imshonechen/adidm-check`。
+- 构建平台为 `linux/amd64` 和 `linux/arm64`。
+
+生产环境必须修改 `SECRET_KEY`，并确保 GitHub Packages 中镜像可被部署环境拉取。
+
+### 传统生产环境
 
 ```bash
 pip install gunicorn   # Linux

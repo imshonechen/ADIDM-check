@@ -1,0 +1,11 @@
+services:
+  adidm-check:
+    image: ghcr.io/imshonechen/adidm-check:latest
+    container_name: adidm-check
+    restart: unless-stopped
+    ports:
+      - "26300:26300"
+    environment:
+      SECRET_KEY: "change-this-to-a-random-secret-key"
+    volumes:
+      - ./data:/app/data

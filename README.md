@@ -50,6 +50,8 @@ ADIDM-check/
 │       └── templates/       # 管理后台 Jinja2 模板，包含记录列表、系统设置和编辑页
 ├── templates/index.html     # 前台页面
 ├── docs/technical-design.md # 技术设计文档
+├── compose.yml              # GHCR 镜像部署示例
+├── Dockerfile               # GHCR 镜像构建文件
 ├── data/                    # 运行时数据库与下载文件，已被 Git 忽略
 ├── requirements.txt
 └── run.py
@@ -253,6 +255,45 @@ JSON 响应遵循统一结构：
 ```
 
 ## 生产部署
+
+### Docker Compose（GHCR）
+
+仓库提供 `compose.yml`，默认使用 GHCR 镜像：
+
+```yaml
+image: ghcr.io/imshonechen/adidm-check:latest
+```
+
+部署步骤：
+
+```bash
+mkdir -p data
+docker compose up -d
+```
+
+访问：
+
+- 前台页面：`http://服务器IP:26300/`
+- 管理后台：`http://服务器IP:26300/admin`
+
+首次部署后初始化管理员账号：
+
+```bash
+docker compose exec adidm-check python run.py init-admin --username admin --password your_password
+```
+
+生产环境请修改 `compose.yml` 中的 `SECRET_KEY`，并保留 `./data:/app/data` 卷挂载，数据库和下载文件都会保存在宿主机 `data/` 目录。
+
+升级镜像：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+GHCR 镜像由 `.github/workflows/ghcr.yml` 在推送 `main` 分支或 `v*` 标签时自动构建并发布，支持 `linux/amd64` 和 `linux/arm64`。
+
+### 传统部署
 
 Linux 使用 Gunicorn：
 

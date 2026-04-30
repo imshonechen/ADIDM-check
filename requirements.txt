@@ -4,3 +4,4 @@ APScheduler>=3.10
 Flask-Login>=0.6
 Werkzeug>=3.0
 curl_cffi>=0.14
+waitress>=3.0
