@@ -9,6 +9,8 @@ ADIDM-Check 是一个基于 Flask 的 IDM Ali.Dbg 版本监控站点。它会定
 - 管理后台：登录、手动新增记录、编辑、删除、设置展示版本、系统设置
 - 管理后台手动触发抓取
 - 新版本可选择转发给 Telegram 机器人会话或频道，并在本地文件存在时以文件消息附带说明发送
+- Telegram 消息在版本记录行按机器人/频道分别管理，支持发送、编辑、同步、删除、重发，并记录 Message ID
+- Telegram 机器人支持 `/check`、`/latest`、`/status`、`/translate` 管理命令
 - APScheduler 每日定时抓取
 - SQLite 本地存储，无需额外数据库服务
 - 使用 `curl_cffi` 处理 Workupload Puzzle Captcha 流程
@@ -102,11 +104,12 @@ python run.py
 
 应用启动时会自动创建 `data/adidm.db`。下载文件会保存在 `data/downloads/`。整个 `data/` 目录已被 Git 忽略。
 
-SQLite 当前包含三张表：
+SQLite 当前包含四张表：
 
 - `versions`：版本信息、下载地址、SHA256、更新日志、展示标记、时间戳
 - `users`：管理员账号与密码哈希
 - `settings`：抓取状态、Telegram 配置与在线翻译配置，例如 `last_checked`、`telegram_bot_token`、`translation_provider`
+- `telegram_messages`：Telegram 机器人/频道消息记录、Message ID、状态和最近错误
 
 ## 抓取流程
 
@@ -137,6 +140,20 @@ SQLite 当前包含三张表：
 - 翻译测试：保存当前配置后，输入测试文本并立即查看翻译结果
 
 翻译失败不会影响抓取和入库。前台、后台和 Telegram 通知会优先展示 `changelog_zh`，没有中文翻译时回退到原始 `changelog`。版本编辑页也提供“翻译更新日志”按钮，可手动将当前更新日志翻译到中文翻译框，确认后再保存。
+
+## Telegram 管理
+
+后台“系统设置 / Telegram 转发设置”可以配置 Bot Token、机器人会话 Chat ID、频道 Chat ID、自动转发开关和命令权限。启用机器人命令后，程序会通过后台 polling 接收命令：
+
+| 命令 | 说明 |
+| --- | --- |
+| `/help` | 查看可用命令 |
+| `/status` | 查看最近检测和转发状态 |
+| `/latest` | 查看当前最新版本 |
+| `/check` | 手动触发一次检测更新 |
+| `/translate [版本号]` | 翻译最新或指定版本更新日志，并同步已记录的 Telegram 消息 |
+
+命令只允许配置的 Telegram User ID 或 Chat ID 执行。后台版本记录每一行提供“管理机器人”和“管理频道”入口，进入后会按当前版本和目标加载预发送或已发送内容；未发送或已删除时显示“新增中”，已发送时显示“编辑中”。如果远端消息已被手动删除，下一次编辑/删除失败时会把本地状态标记为“远端可能已删除”。
 
 ## API
 
@@ -190,6 +207,13 @@ SQLite 当前包含三张表：
 | `POST /admin/api/translation-test` | 测试在线翻译 |
 | `POST /admin/api/telegram-settings` | 保存 Telegram 转发设置 |
 | `POST /admin/api/telegram-test` | 发送 Telegram 测试消息 |
+| `GET /admin/versions/<id>/telegram/<target>` | 管理指定版本的机器人或频道消息 |
+| `POST /admin/api/versions/<id>/telegram/<target>/send` | 手动发送版本消息 |
+| `POST /admin/api/versions/<id>/telegram/<target>/edit` | 编辑 Telegram 消息 |
+| `POST /admin/api/versions/<id>/telegram/<target>/sync` | 用当前版本信息同步 Telegram 消息 |
+| `POST /admin/api/versions/<id>/telegram/<target>/delete` | 删除 Telegram 消息 |
+| `POST /admin/api/versions/<id>/telegram/<target>/resend` | 重发 Telegram 消息 |
+| `POST /admin/api/versions/<id>/translate` | 翻译指定版本更新日志 |
 | `GET /admin/create` | 新增版本页面 |
 | `GET /admin/edit/<id>` | 编辑版本页面 |
 | `GET /admin/logout` | 退出登录 |
@@ -211,6 +235,12 @@ SQLite 当前包含三张表：
 | `POST` | `/admin/api/translation-test` | 测试在线翻译 |
 | `POST` | `/admin/api/telegram-settings` | 保存 Telegram 转发设置 |
 | `POST` | `/admin/api/telegram-test` | 测试 Telegram 发送 |
+| `POST` | `/admin/api/versions/<id>/telegram/<target>/send` | 手动发送版本消息 |
+| `POST` | `/admin/api/versions/<id>/telegram/<target>/edit` | 编辑 Telegram 消息 |
+| `POST` | `/admin/api/versions/<id>/telegram/<target>/sync` | 同步 Telegram 消息 |
+| `POST` | `/admin/api/versions/<id>/telegram/<target>/delete` | 删除 Telegram 消息 |
+| `POST` | `/admin/api/versions/<id>/telegram/<target>/resend` | 重发 Telegram 消息 |
+| `POST` | `/admin/api/versions/<id>/translate` | 翻译指定版本更新日志 |
 
 JSON 响应遵循统一结构：
 

@@ -43,4 +43,8 @@ def create_app():
     from app.scheduler import start_scheduler
     start_scheduler(app)
 
+    # Start Telegram command polling loop
+    from app.telegram import start_command_polling
+    start_command_polling(app)
+
     return app

@@ -51,6 +51,25 @@ def init_db(db_path):
             value TEXT NOT NULL
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS telegram_messages (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            version_id     INTEGER NOT NULL,
+            target_type    TEXT    NOT NULL,
+            chat_id        TEXT    NOT NULL,
+            message_id     INTEGER,
+            mode           TEXT    NOT NULL,
+            text           TEXT,
+            content_hash   TEXT,
+            status         TEXT    NOT NULL,
+            last_error     TEXT,
+            last_checked_at TEXT,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            deleted_at     TEXT,
+            UNIQUE(version_id, target_type, chat_id)
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -159,6 +178,7 @@ def delete_version(db_path, version_id):
     conn = get_db(db_path)
     # Get filename before deleting for local file cleanup
     row = conn.execute('SELECT filename FROM versions WHERE id = ?', (version_id,)).fetchone()
+    conn.execute('DELETE FROM telegram_messages WHERE version_id = ?', (version_id,))
     conn.execute('DELETE FROM versions WHERE id = ?', (version_id,))
     conn.commit()
     conn.close()
@@ -246,5 +266,115 @@ def set_settings(db_path, settings):
     conn = get_db(db_path)
     for key, value in settings.items():
         conn.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
+    conn.commit()
+    conn.close()
+
+
+def upsert_telegram_message(db_path, data):
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db(db_path)
+    existing = conn.execute(
+        'SELECT id FROM telegram_messages WHERE version_id = ? AND target_type = ? AND chat_id = ?',
+        (data['version_id'], data['target_type'], data['chat_id'])
+    ).fetchone()
+    if existing:
+        conn.execute('''
+            UPDATE telegram_messages
+            SET message_id = ?, mode = ?, text = ?, content_hash = ?, status = ?,
+                last_error = ?, last_checked_at = ?, updated_at = ?, deleted_at = ?
+            WHERE id = ?
+        ''', (
+            data.get('message_id'), data.get('mode'), data.get('text'), data.get('content_hash'),
+            data.get('status'), data.get('last_error'), data.get('last_checked_at'),
+            now, data.get('deleted_at'), existing['id']
+        ))
+        message_id = existing['id']
+    else:
+        cursor = conn.execute('''
+            INSERT INTO telegram_messages
+            (version_id, target_type, chat_id, message_id, mode, text, content_hash, status,
+             last_error, last_checked_at, created_at, updated_at, deleted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data['version_id'], data['target_type'], data['chat_id'], data.get('message_id'),
+            data.get('mode'), data.get('text'), data.get('content_hash'), data.get('status'),
+            data.get('last_error'), data.get('last_checked_at'), now, now, data.get('deleted_at')
+        ))
+        message_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return message_id
+
+
+def get_telegram_messages(db_path, version_id=None):
+    conn = get_db(db_path)
+    if version_id:
+        rows = conn.execute('''
+            SELECT tm.*, v.version, v.filename
+            FROM telegram_messages tm
+            LEFT JOIN versions v ON v.id = tm.version_id
+            WHERE tm.version_id = ?
+            ORDER BY tm.id DESC
+        ''', (version_id,)).fetchall()
+    else:
+        rows = conn.execute('''
+            SELECT tm.*, v.version, v.filename
+            FROM telegram_messages tm
+            LEFT JOIN versions v ON v.id = tm.version_id
+            ORDER BY tm.id DESC
+        ''').fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_telegram_message_by_id(db_path, message_id):
+    conn = get_db(db_path)
+    row = conn.execute('''
+        SELECT tm.*, v.version, v.download_url, v.filename, v.filesize, v.sha256,
+               v.direct_url, v.changelog, v.changelog_zh
+        FROM telegram_messages tm
+        LEFT JOIN versions v ON v.id = tm.version_id
+        WHERE tm.id = ?
+    ''', (message_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_telegram_message_by_version_target(db_path, version_id, target_type):
+    conn = get_db(db_path)
+    row = conn.execute('''
+        SELECT tm.*, v.version, v.download_url, v.filename, v.filesize, v.sha256,
+               v.direct_url, v.changelog, v.changelog_zh
+        FROM telegram_messages tm
+        LEFT JOIN versions v ON v.id = tm.version_id
+        WHERE tm.version_id = ? AND tm.target_type = ?
+        ORDER BY tm.id DESC
+        LIMIT 1
+    ''', (version_id, target_type)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_telegram_message_state(db_path, message_id, status, last_error=None,
+                                  text=None, content_hash=None, deleted_at=None,
+                                  telegram_message_id=None):
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db(db_path)
+    fields = ['status = ?', 'last_error = ?', 'last_checked_at = ?', 'updated_at = ?']
+    values = [status, last_error, now, now]
+    if text is not None:
+        fields.append('text = ?')
+        values.append(text)
+    if content_hash is not None:
+        fields.append('content_hash = ?')
+        values.append(content_hash)
+    if deleted_at is not None:
+        fields.append('deleted_at = ?')
+        values.append(deleted_at)
+    if telegram_message_id is not None:
+        fields.append('message_id = ?')
+        values.append(telegram_message_id)
+    values.append(message_id)
+    conn.execute(f'UPDATE telegram_messages SET {", ".join(fields)} WHERE id = ?', values)
     conn.commit()
     conn.close()

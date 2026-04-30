@@ -1,0 +1,118 @@
+{% extends "layout.html" %}
+{% block title %}Telegram 消息管理{% endblock %}
+{% block content %}
+<div class="top-bar">
+    <h2>Telegram {{ target_label }}消息</h2>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">返回列表</a>
+</div>
+
+<div class="card">
+    <div class="form-grid">
+        <div class="form-group">
+            <label>版本</label>
+            <input type="text" value="{{ version.version }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>目标</label>
+            <input type="text" value="{{ target_label }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>Chat ID</label>
+            <input type="text" value="{{ chat_id or '未配置' }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>Message ID</label>
+            <input type="text" value="{{ message.message_id if message and message.message_id else '-' }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>当前状态</label>
+            <input type="text" value="{{ editor_state }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>远端状态</label>
+            <input type="text" value="{{ message.status_label if message else '未发送' }}" readonly>
+        </div>
+    </div>
+
+    {% if message and message.last_error %}
+    <div class="error">最近错误：{{ message.last_error }}</div>
+    {% endif %}
+
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+        {% if editor_state == '新增中' %}
+        <button type="button" class="btn btn-primary" onclick="sendMessage()">发送</button>
+        {% else %}
+        <button type="button" class="btn btn-primary" onclick="editMessage()">保存编辑</button>
+        <button type="button" class="btn btn-success" onclick="syncMessage()">同步</button>
+        <button type="button" class="btn btn-warning" onclick="resendMessage()">重发</button>
+        <button type="button" class="btn btn-danger" onclick="deleteMessage()">删除</button>
+        {% endif %}
+        <span id="messageStatus" style="color:#777; font-size:13px;"></span>
+    </div>
+
+    <div class="form-group">
+        <label>消息内容</label>
+        <textarea id="messageText" rows="16" style="font-family: monospace; font-size: 13px;">{{ message_text }}</textarea>
+        <div class="form-hint">新增中会默认加载预发送内容；编辑中会默认加载已发送内容。文件消息会作为 caption 发送，过长会自动截断。</div>
+    </div>
+</div>
+
+<script>
+var baseUrl = '/admin/api/versions/{{ version.id }}/telegram/{{ target_type }}';
+
+function payload() {
+    return { text: document.getElementById('messageText').value };
+}
+
+function handleResponse(promise) {
+    var statusEl = document.getElementById('messageStatus');
+    statusEl.textContent = '处理中...';
+    promise
+        .then(r => r.json())
+        .then(data => {
+            statusEl.textContent = data.message || '操作完成';
+            alert(data.message || '操作完成');
+            if (data.code === 0) location.reload();
+        })
+        .catch(() => {
+            statusEl.textContent = '请求失败';
+            alert('请求失败');
+        });
+}
+
+function sendMessage() {
+    handleResponse(fetch(baseUrl + '/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload())
+    }));
+}
+
+function editMessage() {
+    handleResponse(fetch(baseUrl + '/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload())
+    }));
+}
+
+function syncMessage() {
+    if (!confirm('确定用当前版本信息同步覆盖 Telegram 消息？')) return;
+    handleResponse(fetch(baseUrl + '/sync', { method: 'POST' }));
+}
+
+function resendMessage() {
+    if (!confirm('确定重新发送当前编辑框内容并更新 Message ID？')) return;
+    handleResponse(fetch(baseUrl + '/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload())
+    }));
+}
+
+function deleteMessage() {
+    if (!confirm('确定删除 Telegram 远端消息？')) return;
+    handleResponse(fetch(baseUrl + '/delete', { method: 'POST' }));
+}
+</script>
+{% endblock %}

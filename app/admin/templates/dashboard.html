@@ -27,7 +27,6 @@
                 <th>文件名</th>
                 <th>文件大小</th>
                 <th>更新日志</th>
-                <th>状态</th>
                 <th>创建日期</th>
                 <th>更新日期</th>
                 <th>操作</th>
@@ -41,24 +40,25 @@
                 <td>{{ v.filename or '-' }}</td>
                 <td>{{ v.filesize_display or '-' }}</td>
                 <td style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ v.changelog_display or '' }}">{{ v.changelog_display[:50] + '...' if v.changelog_display and v.changelog_display|length > 50 else v.changelog_display or '-' }}</td>
-                <td>
-                    {% if v.is_featured %}
-                    <span class="badge badge-featured">展示中</span>
-                    {% endif %}
-                </td>
                 <td>{{ v.created_at }}</td>
                 <td>{{ v.updated_at }}</td>
                 <td class="actions">
-                    <a href="{{ url_for('admin.edit', version_id=v.id) }}" class="btn btn-primary btn-sm">编辑</a>
-                    {% if not v.is_featured %}
-                    <button class="btn btn-success btn-sm" onclick="setFeatured({{ v.id }})">设为展示</button>
+                    {% set bot_msg = v.telegram_messages.bot %}
+                    {% set channel_msg = v.telegram_messages.channel %}
+                    {% if v.is_featured %}
+                    <span class="btn btn-featured btn-sm">展示中</span>
+                    {% else %}
+                    <button class="btn btn-success btn-sm" onclick="setFeatured({{ v.id }})">展示</button>
                     {% endif %}
+                    <a href="{{ url_for('admin.edit', version_id=v.id) }}" class="btn btn-primary btn-sm">编辑</a>
                     <button class="btn btn-danger btn-sm" onclick="deleteVersion({{ v.id }})">删除</button>
+                    <a href="{{ url_for('admin.telegram_message_editor', version_id=v.id, target_type='bot') }}" class="btn {{ 'btn-telegram-sent' if bot_msg and bot_msg.message_id and bot_msg.status not in ('deleted', 'missing') else 'btn-muted' }} btn-sm">bot信息</a>
+                    <a href="{{ url_for('admin.telegram_message_editor', version_id=v.id, target_type='channel') }}" class="btn {{ 'btn-telegram-sent' if channel_msg and channel_msg.message_id and channel_msg.status not in ('deleted', 'missing') else 'btn-muted' }} btn-sm">频道信息</a>
                 </td>
             </tr>
             {% endfor %}
             {% if not versions %}
-            <tr><td colspan="9" style="text-align:center; padding:24px; color:#999;">暂无记录</td></tr>
+            <tr><td colspan="8" style="text-align:center; padding:24px; color:#999;">暂无记录</td></tr>
             {% endif %}
         </tbody>
     </table>

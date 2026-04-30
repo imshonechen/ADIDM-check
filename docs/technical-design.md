@@ -156,11 +156,55 @@ CREATE TABLE IF NOT EXISTS settings (
 - `telegram_notify_bot_enabled`：是否将新版本转发给机器人会话，`1` 表示开启，`0` 表示关闭。
 - `telegram_notify_channel_enabled`：是否将新版本转发到频道，`1` 表示开启，`0` 表示关闭。
 - `telegram_last_notify_status`：最近一次 Telegram 自动转发状态。
+- `telegram_commands_enabled`：是否启用 Telegram 机器人命令。
+- `telegram_admin_user_ids`：允许执行命令的 Telegram User ID，多个值用英文逗号分隔。
+- `telegram_admin_chat_ids`：允许执行命令的 Chat ID，多个值用英文逗号分隔。
 - `translation_provider`：翻译服务，`off`、`deeplx` 或 `openai`。
 - `translation_deeplx_url`：DeepLX 完整接口地址，例如 `https://api.deeplx.org/<api-key>/translate`。
 - `translation_openai_base_url`：OpenAI 兼容接口 Base URL。
 - `translation_openai_api_key`：OpenAI 兼容接口 API Key。
 - `translation_openai_model`：OpenAI 兼容接口模型名。
+
+### 4.4 telegram_messages 表（Telegram 消息记录）
+
+用于记录系统发送到机器人会话或频道的消息，便于后续编辑、删除、同步和重发。Telegram 上人工编辑或删除不会主动通知系统，本表表示系统最后一次已知状态。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | INTEGER | PRIMARY KEY AUTOINCREMENT | 自增主键 |
+| version_id | INTEGER | NOT NULL | 对应版本记录 |
+| target_type | TEXT | NOT NULL | `bot` 或 `channel` |
+| chat_id | TEXT | NOT NULL | Telegram Chat ID |
+| message_id | INTEGER | | Telegram 返回的 Message ID |
+| mode | TEXT | NOT NULL | `message` 或 `document` |
+| text | TEXT | | 文本消息内容或文件 caption |
+| content_hash | TEXT | | 系统生成内容的 SHA256 |
+| status | TEXT | NOT NULL | `sent`、`edited`、`deleted`、`missing`、`failed` |
+| last_error | TEXT | | 最近一次 Telegram API 错误 |
+| last_checked_at | TEXT | | 最近一次操作时间 |
+| created_at | TEXT | NOT NULL | 创建时间 |
+| updated_at | TEXT | NOT NULL | 更新时间 |
+| deleted_at | TEXT | | 删除时间 |
+
+```sql
+CREATE TABLE IF NOT EXISTS telegram_messages (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_id     INTEGER NOT NULL,
+    target_type    TEXT    NOT NULL,
+    chat_id        TEXT    NOT NULL,
+    message_id     INTEGER,
+    mode           TEXT    NOT NULL,
+    text           TEXT,
+    content_hash   TEXT,
+    status         TEXT    NOT NULL,
+    last_error     TEXT,
+    last_checked_at TEXT,
+    created_at     TEXT    NOT NULL,
+    updated_at     TEXT    NOT NULL,
+    deleted_at     TEXT,
+    UNIQUE(version_id, target_type, chat_id)
+);
+```
 
 ---
 
@@ -423,6 +467,51 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
+#### GET /admin/versions/:id/telegram/:target
+
+管理指定版本的 Telegram 消息。`target` 可为 `bot` 或 `channel`。页面会显示对应 Chat ID、Message ID、远端状态、编辑状态和消息编辑框。
+
+状态规则：
+
+- 没有消息记录、已删除或远端缺失：显示“新增中”，编辑框加载系统预发送内容。
+- 已发送或已编辑：显示“编辑中”，编辑框加载已记录的消息内容。
+
+#### POST /admin/api/versions/:id/telegram/:target/send
+
+手动向机器人会话或频道发送指定版本消息，成功后写入 `telegram_messages`。
+
+**请求体：**
+
+```json
+{
+    "text": "<b>ADIDM-Check 检测到新版本</b>\n版本：<code>20.6</code>"
+}
+```
+
+#### POST /admin/api/versions/:id/telegram/:target/edit
+
+编辑已记录的 Telegram 消息。文本消息调用 `editMessageText`，文件消息调用 `editMessageCaption`。
+
+**请求体：**
+
+```json
+{
+    "text": "<b>ADIDM-Check 检测到新版本</b>\n版本：<code>20.6</code>"
+}
+```
+
+#### POST /admin/api/versions/:id/telegram/:target/sync
+
+根据当前版本信息重新生成消息内容并编辑远端消息。
+
+#### POST /admin/api/versions/:id/telegram/:target/delete
+
+删除远端 Telegram 消息。若 Telegram 返回消息不存在，系统会将本地状态标记为 `missing`。
+
+#### POST /admin/api/versions/:id/telegram/:target/resend
+
+重新发送同一版本消息并更新本地记录中的 `message_id`。请求体可包含 `text`，用于按编辑框内容重发。
+
 #### POST /admin/api/translation-settings
 
 保存在线翻译设置。该接口需要登录认证。
@@ -459,6 +548,10 @@ CREATE TABLE IF NOT EXISTS settings (
     "text": "* Improved UI\n* Fixed bugs"
 }
 ```
+
+#### POST /admin/api/versions/:id/translate
+
+翻译指定版本的更新日志并保存到 `changelog_zh`。
 
 **响应 200：**
 
@@ -618,8 +711,9 @@ workupload.com 对非浏览器请求有反爬机制，访问文件页会返回 "
 | 页面 | 路由 | 功能 |
 |------|------|------|
 | 登录页 | GET /admin/login | 管理员登录表单 |
-| 记录列表 | GET /admin/dashboard | 查看所有抓取记录（含创建日期、更新日期），支持删除、设为展示，显示最近检测时间和源站状态 |
+| 记录列表 | GET /admin/dashboard | 查看所有抓取记录（含创建日期、更新日期），支持删除、设为展示，显示最近检测时间、源站状态和每个版本的机器人/频道消息状态 |
 | 系统设置 | GET /admin/settings | 配置在线翻译和 Telegram 转发，并支持翻译测试与 Telegram 测试 |
+| Telegram 消息 | GET /admin/versions/:id/telegram/:target | 管理某个版本对应的机器人或频道消息 |
 | 新增记录 | GET /admin/create | 手动新增版本记录表单 |
 | 编辑记录 | GET /admin/edit/:id | 编辑指定记录表单，并可手动翻译当前更新日志到中文翻译字段 |
 
@@ -634,6 +728,7 @@ workupload.com 对非浏览器请求有反爬机制，访问文件页会返回 "
 - 手动触发抓取
 - 在独立系统设置页配置在线翻译和 Telegram 转发
 - 使用后台按钮测试在线翻译、Telegram 机器人和频道发送
+- 在版本记录行管理机器人消息和频道消息：手动发送、编辑、同步、删除和重发
 
 ### 6.5 展示格式化模块（formatters.py）
 
@@ -656,14 +751,29 @@ workupload.com 对非浏览器请求有反爬机制，访问文件页会返回 "
 
 - 无本地文件时使用 Telegram Bot API 的 `sendMessage` 接口发送 HTML 格式消息；有本地文件时使用 `sendDocument` 接口发送文件，并将同一份版本说明作为 caption。
 - 配置保存在 `settings` 表，管理后台系统设置页提供 Bot Token、机器人/会话 Chat ID、频道 Chat ID 以及两个独立转发开关。
+- 发送成功后记录 `telegram_messages.message_id`，用于后续编辑、删除、同步和重发。
 - 仅当抓取到新版本并插入 `versions` 表后自动通知；刷新已有版本不会重复转发。
 - 机器人转发与频道转发相互独立，可以只开启其中一个，也可以同时开启。
 - 频道转发要求机器人已加入频道并具备发消息权限。
 - Telegram 文本消息中，文件名、文件大小和 SHA256 使用等宽格式；文件大小会按 B、KB、MB、GB 自动换算并保留 2 位小数。
 - 文件发送依赖本地下载缓存，仅当 `data/downloads/<filename>` 存在时发送文件消息；文件不存在时退回文本通知。
+- 版本记录页每行显示机器人和频道消息状态、Message ID 以及管理入口。
+- 版本 Telegram 消息页按 `version_id + target_type` 管理单条消息，支持手动发送版本消息、编辑消息、同步当前版本信息、删除远端消息和重发消息。
+- 如果远端消息被人工删除，系统通常无法实时感知；下一次编辑或删除失败时会将本地状态标记为 `missing`。
 - 发送失败时记录 warning 日志，不影响版本入库和抓取状态。
 
-### 6.8 在线翻译模块（translator.py）
+### 6.8 Telegram 命令模块
+
+- 启用 `telegram_commands_enabled` 后，应用启动时通过后台线程 polling Telegram `getUpdates`。
+- 仅允许 `telegram_admin_user_ids` 或 `telegram_admin_chat_ids` 中配置的用户/会话执行命令。
+- 支持命令：
+  - `/help`：查看可用命令。
+  - `/status`：查看最近检测和转发状态。
+  - `/latest`：查看当前最新版本。
+  - `/check`：手动触发一次检测更新。
+  - `/translate [版本号]`：翻译最新或指定版本更新日志，并同步该版本已记录的 Telegram 消息。
+
+### 6.9 在线翻译模块（translator.py）
 
 - 支持 `off`、`deeplx`、`openai` 三种模式。
 - DeepLX 使用完整接口地址，例如 `https://api.deeplx.org/<api-key>/translate`，请求体包含 `text`、`source_lang=EN`、`target_lang=ZH`。

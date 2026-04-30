@@ -8,7 +8,17 @@ from app.models import (
     insert_version, update_version, delete_version, set_featured,
     get_setting, set_settings
 )
-from app.telegram import get_telegram_settings, send_test_message
+from app.telegram import (
+    build_message_editor_context,
+    delete_tracked_message,
+    edit_tracked_message,
+    get_version_message_summary,
+    get_telegram_settings,
+    resend_tracked_message_text,
+    send_test_message,
+    send_version_message_text,
+    sync_tracked_message,
+)
 from app.translator import get_translation_settings, translate_changelog
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin',
@@ -53,6 +63,7 @@ def dashboard():
     for version in versions:
         version['filesize_display'] = format_filesize(version.get('filesize'))
         version['changelog_display'] = version.get('changelog_zh') or version.get('changelog')
+        version['telegram_messages'] = get_version_message_summary(db_path, version['id'])
     last_checked = get_setting(db_path, 'last_checked')
     last_check_status = get_setting(db_path, 'last_check_status')
     return render_template('dashboard.html', versions=versions,
@@ -102,6 +113,19 @@ def edit(version_id):
     data = request.form.to_dict()
     update_version(db_path, version_id, data)
     return redirect(url_for('admin.dashboard'))
+
+
+@admin_bp.route('/versions/<int:version_id>/telegram/<target_type>')
+@login_required
+def telegram_message_editor(version_id, target_type):
+    if target_type not in ('bot', 'channel'):
+        return redirect(url_for('admin.dashboard'))
+    context = build_message_editor_context(
+        current_app.config['DATABASE_PATH'], version_id, target_type
+    )
+    if not context:
+        return redirect(url_for('admin.dashboard'))
+    return render_template('telegram_message.html', **context)
 
 
 # --- API Routes ---
@@ -209,6 +233,9 @@ def api_update_telegram_settings():
         'telegram_channel_chat_id': data.get('channel_chat_id', '').strip(),
         'telegram_notify_bot_enabled': '1' if data.get('notify_bot_enabled') else '0',
         'telegram_notify_channel_enabled': '1' if data.get('notify_channel_enabled') else '0',
+        'telegram_commands_enabled': '1' if data.get('commands_enabled') else '0',
+        'telegram_admin_user_ids': data.get('admin_user_ids', '').strip(),
+        'telegram_admin_chat_ids': data.get('admin_chat_ids', '').strip(),
     })
     return jsonify({'code': 0, 'message': 'Telegram 设置已保存'})
 
@@ -262,6 +289,114 @@ def api_test_telegram():
         return jsonify({'code': 1, 'message': message}), 400
 
     return jsonify({'code': 0, 'message': message})
+
+
+@admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/send', methods=['POST'])
+@login_required
+def api_send_version_telegram_message(version_id, target_type):
+    data = request.get_json(silent=True) or {}
+    if target_type not in ('bot', 'channel'):
+        return jsonify({'code': 1, 'message': '发送目标无效'}), 400
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({'code': 1, 'message': '消息内容不能为空'}), 400
+
+    db_path = current_app.config['DATABASE_PATH']
+    version = get_version_by_id(db_path, version_id)
+    if not version:
+        return jsonify({'code': 1, 'message': '版本记录不存在'}), 404
+
+    ok, message, row_id = send_version_message_text(
+        db_path, version['id'], target_type, text, current_app.config['REQUEST_TIMEOUT']
+    )
+    if not ok:
+        return jsonify({'code': 1, 'message': message, 'data': {'id': row_id}}), 400
+    return jsonify({'code': 0, 'message': message, 'data': {'id': row_id}})
+
+
+@admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/edit', methods=['POST'])
+@login_required
+def api_edit_version_telegram_message(version_id, target_type):
+    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    if not context or not context.get('message'):
+        return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({'code': 1, 'message': '消息内容不能为空'}), 400
+
+    ok, message = edit_tracked_message(
+        current_app.config['DATABASE_PATH'], context['message']['id'], text,
+        current_app.config['REQUEST_TIMEOUT']
+    )
+    if not ok:
+        return jsonify({'code': 1, 'message': message}), 400
+    return jsonify({'code': 0, 'message': message})
+
+
+@admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/sync', methods=['POST'])
+@login_required
+def api_sync_version_telegram_message(version_id, target_type):
+    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    if not context or not context.get('message'):
+        return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
+    ok, message = sync_tracked_message(
+        current_app.config['DATABASE_PATH'], context['message']['id'],
+        current_app.config['REQUEST_TIMEOUT']
+    )
+    if not ok:
+        return jsonify({'code': 1, 'message': message}), 400
+    return jsonify({'code': 0, 'message': message})
+
+
+@admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/delete', methods=['POST'])
+@login_required
+def api_delete_version_telegram_message(version_id, target_type):
+    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    if not context or not context.get('message'):
+        return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
+    ok, message = delete_tracked_message(
+        current_app.config['DATABASE_PATH'], context['message']['id'],
+        current_app.config['REQUEST_TIMEOUT']
+    )
+    if not ok:
+        return jsonify({'code': 1, 'message': message}), 400
+    return jsonify({'code': 0, 'message': message})
+
+
+@admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/resend', methods=['POST'])
+@login_required
+def api_resend_version_telegram_message(version_id, target_type):
+    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    if not context or not context.get('message'):
+        return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip() or context['message_text']
+    ok, message = resend_tracked_message_text(
+        current_app.config['DATABASE_PATH'], context['message']['id'], text,
+        current_app.config['REQUEST_TIMEOUT']
+    )
+    if not ok:
+        return jsonify({'code': 1, 'message': message}), 400
+    return jsonify({'code': 0, 'message': message})
+
+
+@admin_bp.route('/api/versions/<int:version_id>/translate', methods=['POST'])
+@login_required
+def api_translate_version(version_id):
+    db_path = current_app.config['DATABASE_PATH']
+    version = get_version_by_id(db_path, version_id)
+    if not version:
+        return jsonify({'code': 1, 'message': '版本记录不存在'}), 404
+    if not version.get('changelog'):
+        return jsonify({'code': 1, 'message': '该版本没有可翻译的更新日志'}), 400
+
+    translation = translate_changelog(db_path, version['changelog'], current_app.config['REQUEST_TIMEOUT'])
+    if not translation:
+        return jsonify({'code': 1, 'message': '翻译失败，请检查翻译服务配置'}), 400
+
+    update_version(db_path, version_id, {'changelog_zh': translation})
+    return jsonify({'code': 0, 'message': '翻译完成', 'data': {'translation': translation}})
 
 
 def _format_telegram_notify_status(status):
