@@ -8,3 +8,9 @@ build/
 data/
 .vscode/
 .idea/
+
+# AI/Trellis 本地工作流文件
+.agents/
+.codex/
+.trellis/
+AGENTS.md
