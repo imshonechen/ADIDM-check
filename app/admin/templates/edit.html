@@ -35,7 +35,15 @@
         </div>
         <div class="form-group">
             <label>更新日志</label>
-            <textarea name="changelog" rows="8" placeholder="Changelog 内容" style="width:100%; font-family: monospace; font-size: 13px;">{{ version.changelog if version and version.changelog else '' }}</textarea>
+            <textarea id="changelogText" name="changelog" rows="8" placeholder="Changelog 内容" style="width:100%; font-family: monospace; font-size: 13px;">{{ version.changelog if version and version.changelog else '' }}</textarea>
+        </div>
+        <div class="form-group">
+            <label>更新日志中文翻译</label>
+            <textarea id="changelogZhText" name="changelog_zh" rows="8" placeholder="自动翻译后的中文更新日志" style="width:100%; font-family: monospace; font-size: 13px;">{{ version.changelog_zh if version and version.changelog_zh else '' }}</textarea>
+            <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+                <button type="button" class="btn btn-secondary" onclick="translateChangelog()">翻译更新日志</button>
+                <span id="translateStatus" style="color:#777; font-size:13px;"></span>
+            </div>
         </div>
         <div style="display: flex; gap: 12px;">
             <button type="submit" class="btn btn-primary">{{ '保存修改' if version else '新增' }}</button>
@@ -43,4 +51,37 @@
         </div>
     </form>
 </div>
+<script>
+function translateChangelog() {
+    var sourceEl = document.getElementById('changelogText');
+    var targetEl = document.getElementById('changelogZhText');
+    var statusEl = document.getElementById('translateStatus');
+    var text = sourceEl.value.trim();
+    if (!text) {
+        alert('更新日志不能为空');
+        return;
+    }
+    if (targetEl.value.trim() && !confirm('中文翻译已有内容，确定覆盖？')) {
+        return;
+    }
+    statusEl.textContent = '正在翻译...';
+    fetch('/admin/api/translation-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.code !== 0) {
+                statusEl.textContent = data.message || '翻译失败';
+                return;
+            }
+            targetEl.value = data.data.translation || '';
+            statusEl.textContent = '翻译完成，保存后生效';
+        })
+        .catch(() => {
+            statusEl.textContent = '请求失败';
+        });
+}
+</script>
 {% endblock %}

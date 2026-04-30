@@ -39,8 +39,8 @@
                 <td>{{ v.id }}</td>
                 <td>{{ v.version }}</td>
                 <td>{{ v.filename or '-' }}</td>
-                <td>{{ v.filesize or '-' }}</td>
-                <td style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ v.changelog or '' }}">{{ v.changelog[:50] + '...' if v.changelog and v.changelog|length > 50 else v.changelog or '-' }}</td>
+                <td>{{ v.filesize_display or '-' }}</td>
+                <td style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ v.changelog_display or '' }}">{{ v.changelog_display[:50] + '...' if v.changelog_display and v.changelog_display|length > 50 else v.changelog_display or '-' }}</td>
                 <td>
                     {% if v.is_featured %}
                     <span class="badge badge-featured">展示中</span>
@@ -99,5 +99,6 @@ function doScrape() {
         })
         .catch(() => alert('请求失败'));
 }
+
 </script>
 {% endblock %}

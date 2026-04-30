@@ -31,11 +31,13 @@ def init_db(db_path):
             sha256      TEXT,
             direct_url  TEXT,
             changelog   TEXT,
+            changelog_zh TEXT,
             is_featured INTEGER DEFAULT 0,
             created_at  TEXT    NOT NULL,
             updated_at  TEXT    NOT NULL
         )
     ''')
+    _ensure_column(conn, 'versions', 'changelog_zh', 'TEXT')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +53,12 @@ def init_db(db_path):
     ''')
     conn.commit()
     conn.close()
+
+
+def _ensure_column(conn, table, column, column_type):
+    columns = conn.execute(f'PRAGMA table_info({table})').fetchall()
+    if column not in {row['name'] for row in columns}:
+        conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {column_type}')
 
 
 def get_user_by_id(db_path, user_id):
@@ -119,10 +127,10 @@ def insert_version(db_path, data):
     # Unfeature all existing
     conn.execute('UPDATE versions SET is_featured = 0')
     cursor = conn.execute(
-        'INSERT INTO versions (version, download_url, filename, filesize, sha256, direct_url, changelog, is_featured, created_at, updated_at) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
+        'INSERT INTO versions (version, download_url, filename, filesize, sha256, direct_url, changelog, changelog_zh, is_featured, created_at, updated_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
         (data['version'], data['download_url'], data.get('filename'), data.get('filesize'),
-         data.get('sha256'), data.get('direct_url'), data.get('changelog'), now, now)
+         data.get('sha256'), data.get('direct_url'), data.get('changelog'), data.get('changelog_zh'), now, now)
     )
     conn.commit()
     new_id = cursor.lastrowid
@@ -135,7 +143,7 @@ def update_version(db_path, version_id, data):
     conn = get_db(db_path)
     fields = []
     values = []
-    for key in ('version', 'download_url', 'filename', 'filesize', 'sha256', 'direct_url', 'changelog'):
+    for key in ('version', 'download_url', 'filename', 'filesize', 'sha256', 'direct_url', 'changelog', 'changelog_zh'):
         if key in data:
             fields.append(f'{key} = ?')
             values.append(data[key])
@@ -178,7 +186,7 @@ def refresh_version(db_path, version_id, data):
 
     fields = []
     values = []
-    for key in ('download_url', 'filename', 'filesize', 'sha256', 'direct_url', 'changelog'):
+    for key in ('download_url', 'filename', 'filesize', 'sha256', 'direct_url', 'changelog', 'changelog_zh'):
         if key in data and data[key] is not None:
             fields.append(f'{key} = ?')
             values.append(data[key])
@@ -221,5 +229,22 @@ def get_setting(db_path, key):
 def set_setting(db_path, key, value):
     conn = get_db(db_path)
     conn.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
+    conn.commit()
+    conn.close()
+
+
+def get_settings(db_path, keys):
+    conn = get_db(db_path)
+    placeholders = ','.join('?' for _ in keys)
+    rows = conn.execute(f'SELECT key, value FROM settings WHERE key IN ({placeholders})', tuple(keys)).fetchall()
+    conn.close()
+    found = {row['key']: row['value'] for row in rows}
+    return {key: found.get(key) for key in keys}
+
+
+def set_settings(db_path, settings):
+    conn = get_db(db_path)
+    for key, value in settings.items():
+        conn.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
     conn.commit()
     conn.close()

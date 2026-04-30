@@ -15,6 +15,8 @@ ADIDM-Check 是一个自动化版本监控站点，每日定时抓取 IDM Ali.Db
 | ORM | 直接使用 sqlite3 标准库 | 保持简单，无需额外依赖 |
 | 定时任务 | APScheduler | Python 定时任务调度 |
 | HTTP 请求 | requests | 抓取 XML 源 |
+| 消息推送 | Telegram Bot API | 新版本通知机器人会话或频道，并可用文件消息附带版本说明 |
+| 在线翻译 | DeepLX / OpenAI 兼容接口 | 将英文更新日志翻译为中文 |
 | 反爬绕过 | curl_cffi | 模拟 Chrome TLS 指纹，绕过 workupload.com 反爬 |
 | XML 解析 | xml.etree.ElementTree | 标准库解析 XML |
 | 前端 | HTML + CSS + JavaScript | 原生实现，无需框架 |
@@ -44,9 +46,12 @@ ADIDM-check/
 ├── app/
 │   ├── __init__.py              # Flask 应用工厂
 │   ├── config.py                # 配置文件
+│   ├── formatters.py            # 展示格式化工具
 │   ├── models.py                # 数据库模型与操作
 │   ├── scraper.py               # 抓取逻辑
 │   ├── scheduler.py             # 定时任务调度
+│   ├── telegram.py              # Telegram 消息发送
+│   ├── translator.py            # 在线翻译
 │   ├── api/
 │   │   ├── __init__.py
 │   │   └── routes.py            # 前端 API 路由
@@ -57,12 +62,8 @@ ADIDM-check/
 │   │       ├── login.html       # 登录页面
 │   │       ├── layout.html      # 后台布局模板
 │   │       ├── dashboard.html   # 记录列表页
+│   │       ├── settings.html    # 系统设置页
 │   │       └── edit.html        # 编辑/新增页面
-│   └── static/
-│       ├── css/
-│       │   └── style.css        # 前端样式
-│       └── js/
-│           └── main.js          # 前端 JS 逻辑
 ├── templates/
 │   └── index.html               # 前台首页
 ├── data/
@@ -89,6 +90,7 @@ ADIDM-check/
 | sha256 | TEXT | | SHA256 校验值 |
 | direct_url | TEXT | | 文件直连下载地址 |
 | changelog | TEXT | | 更新日志（从压缩包 Changelog.txt 提取） |
+| changelog_zh | TEXT | | 更新日志中文翻译 |
 | is_featured | INTEGER | DEFAULT 0 | 是否在前台展示（0=否, 1=是） |
 | created_at | TEXT | NOT NULL | 记录创建时间（抓取/新增时间） |
 | updated_at | TEXT | NOT NULL | 最后更新时间 |
@@ -103,6 +105,7 @@ CREATE TABLE IF NOT EXISTS versions (
     sha256      TEXT,
     direct_url  TEXT,
     changelog   TEXT,
+    changelog_zh TEXT,
     is_featured INTEGER DEFAULT 0,
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL
@@ -147,6 +150,17 @@ CREATE TABLE IF NOT EXISTS settings (
 **当前使用的键：**
 - `last_checked`：最近一次版本检测时间（格式 `YYYY-MM-DD HH:MM:SS`），每次执行抓取任务时更新，无论是否发现新版本。前台 API 只返回日期部分（`YYYY-MM-DD`），管理后台显示完整时间。
 - `last_check_status`：最近一次检测状态，`success` 表示正常，`source_error` 表示源站异常。前台在源站异常时显示警告提示，管理后台显示状态标识。
+- `telegram_bot_token`：Telegram Bot Token。
+- `telegram_bot_chat_id`：机器人会话、私聊或群组 Chat ID。
+- `telegram_channel_chat_id`：频道用户名（如 `@channel`）或频道 Chat ID（如 `-100...`）。
+- `telegram_notify_bot_enabled`：是否将新版本转发给机器人会话，`1` 表示开启，`0` 表示关闭。
+- `telegram_notify_channel_enabled`：是否将新版本转发到频道，`1` 表示开启，`0` 表示关闭。
+- `telegram_last_notify_status`：最近一次 Telegram 自动转发状态。
+- `translation_provider`：翻译服务，`off`、`deeplx` 或 `openai`。
+- `translation_deeplx_url`：DeepLX 完整接口地址，例如 `https://api.deeplx.org/<api-key>/translate`。
+- `translation_openai_base_url`：OpenAI 兼容接口 Base URL。
+- `translation_openai_api_key`：OpenAI 兼容接口 API Key。
+- `translation_openai_model`：OpenAI 兼容接口模型名。
 
 ---
 
@@ -171,9 +185,12 @@ CREATE TABLE IF NOT EXISTS settings (
         "download_url": "https://workupload.com/file/S8bHJWYjbkD",
         "filename": "IDM_6.4x_Crack_v20.6.zip",
         "filesize": "65850 (Byte)",
+        "filesize_display": "64.31 KB",
         "sha256": "c537afd82091793889f87e64bc7e8884cfc5d60e63fcc4f876313f516ee5077d",
         "direct_url": "https://f51.workupload.com/download/S8bHJWYjbkD",
         "changelog": "* Improve Interface\n* Improve Windows Version Status\n* Add WinRAR Status\n* Bug Fixes\n* Build #1 CRC32 > cf702b7c",
+        "changelog_zh": "* 改进界面\n* 改进 Windows 版本状态\n* 添加 WinRAR 状态\n* 修复 Bug",
+        "changelog_display": "* 改进界面\n* 改进 Windows 版本状态\n* 添加 WinRAR 状态\n* 修复 Bug",
         "created_at": "2026-03-26",
         "updated_at": "2026-03-26"
     },
@@ -193,9 +210,9 @@ CREATE TABLE IF NOT EXISTS settings (
 
 ### 5.2 管理后台 API
 
-以下 API 均需登录认证，未登录返回 `401`。
+以下 API 位于 `/admin/api`，除登录接口外均需登录认证，未登录返回 `401`。
 
-#### POST /api/admin/login
+#### POST /admin/api/login
 
 管理员登录。
 
@@ -217,7 +234,7 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
-#### GET /api/admin/versions
+#### GET /admin/api/versions
 
 获取所有版本记录列表（按 `created_at` 降序）。
 
@@ -244,7 +261,7 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
-#### POST /api/admin/versions
+#### POST /admin/api/versions
 
 新增版本记录。
 
@@ -271,7 +288,7 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
-#### PUT /api/admin/versions/:id
+#### PUT /admin/api/versions/:id
 
 编辑指定版本记录。
 
@@ -293,7 +310,7 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
-#### DELETE /api/admin/versions/:id
+#### DELETE /admin/api/versions/:id
 
 删除指定版本记录。
 
@@ -306,7 +323,7 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
-#### PUT /api/admin/versions/:id/feature
+#### PUT /admin/api/versions/:id/feature
 
 将指定版本设为前台展示（同时取消其他版本的展示状态）。
 
@@ -319,7 +336,7 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
-#### POST /api/admin/scrape
+#### POST /admin/api/scrape
 
 手动触发一次抓取任务。若版本已存在，会刷新下载地址、文件信息等字段。
 
@@ -348,6 +365,119 @@ CREATE TABLE IF NOT EXISTS settings (
         "status": "source_error",
         "message": "源站请求失败：..."
     }
+}
+```
+
+#### POST /admin/api/telegram-settings
+
+保存 Telegram 转发设置。该接口需要登录认证。
+
+**请求体：**
+
+```json
+{
+    "bot_token": "123456:ABC...",
+    "bot_chat_id": "123456789",
+    "channel_chat_id": "@channel",
+    "notify_bot_enabled": true,
+    "notify_channel_enabled": false
+}
+```
+
+**响应 200：**
+
+```json
+{
+    "code": 0,
+    "message": "Telegram 设置已保存"
+}
+```
+
+#### POST /admin/api/telegram-test
+
+发送 Telegram 测试消息。该接口会使用已保存的配置，`target` 可为 `bot` 或 `channel`。
+
+**请求体：**
+
+```json
+{
+    "target": "bot"
+}
+```
+
+**响应 200：**
+
+```json
+{
+    "code": 0,
+    "message": "发送成功"
+}
+```
+
+**响应 400：**
+
+```json
+{
+    "code": 1,
+    "message": "Telegram Bot Token 未配置"
+}
+```
+
+#### POST /admin/api/translation-settings
+
+保存在线翻译设置。该接口需要登录认证。
+
+**请求体：**
+
+```json
+{
+    "provider": "deeplx",
+    "deeplx_url": "https://api.deeplx.org/<api-key>/translate",
+    "openai_base_url": "https://api.openai.com",
+    "openai_api_key": "sk-...",
+    "openai_model": "gpt-4o-mini"
+}
+```
+
+**响应 200：**
+
+```json
+{
+    "code": 0,
+    "message": "翻译设置已保存"
+}
+```
+
+#### POST /admin/api/translation-test
+
+使用已保存的在线翻译设置执行一次测试翻译。该接口需要登录认证。
+
+**请求体：**
+
+```json
+{
+    "text": "* Improved UI\n* Fixed bugs"
+}
+```
+
+**响应 200：**
+
+```json
+{
+    "code": 0,
+    "message": "翻译测试成功",
+    "data": {
+        "translation": "* 改进界面\n* 修复 Bug"
+    }
+}
+```
+
+**响应 400：**
+
+```json
+{
+    "code": 1,
+    "message": "翻译失败，请检查翻译服务配置"
 }
 ```
 
@@ -390,8 +520,10 @@ CREATE TABLE IF NOT EXISTS settings (
 4. 判断 `Download_URL` 域名是否为 `workupload.com`：
    - **是**：通过 Puzzle Captcha 验证后抓取文件详情和直连地址，并下载文件到本地（见下方 6.1.1）。
    - **否**：仅保存版本号和下载地址，文件信息留空。
-5. 查询数据库，判断该版本是否已存在：
+5. 若提取到英文更新日志并启用在线翻译，则将更新日志翻译为中文并保存到 `changelog_zh`。
+6. 查询数据库，判断该版本是否已存在：
    - **不存在**：插入新记录，`is_featured` 默认设为 `1`（最新版本自动展示），同时将旧记录的 `is_featured` 设为 `0`。
+     - 新版本入库后，根据后台 Telegram 设置将新版本信息转发给机器人会话、频道或两者；若文件已下载到 `data/downloads/`，调用 `sendDocument` 发送文件，并将版本信息放入 caption。
    - **已存在**：静默刷新下载地址、文件名、文件大小、SHA256、直连地址、更新日志等字段。仅当 `download_url` 或 `sha256` 发生变化时更新 `updated_at`（说明源站有实质修改），其他字段变化（如直连地址刷新）不更新 `updated_at`。
 
 **抓取频率：** 每天执行一次（默认每天 08:00）。
@@ -468,7 +600,7 @@ workupload.com 对非浏览器请求有反爬机制，访问文件页会返回 "
 
 **展示内容：**
 - 文件名（Filename）
-- 文件大小（Filesize）
+- 文件大小（Filesize，前台自动换算为 B、KB、MB 或 GB）
 - SHA256 哈希值
 - 版本号（Version）
 - 下载地址（Download URL，可点击跳转）
@@ -487,19 +619,30 @@ workupload.com 对非浏览器请求有反爬机制，访问文件页会返回 "
 |------|------|------|
 | 登录页 | GET /admin/login | 管理员登录表单 |
 | 记录列表 | GET /admin/dashboard | 查看所有抓取记录（含创建日期、更新日期），支持删除、设为展示，显示最近检测时间和源站状态 |
+| 系统设置 | GET /admin/settings | 配置在线翻译和 Telegram 转发，并支持翻译测试与 Telegram 测试 |
 | 新增记录 | GET /admin/create | 手动新增版本记录表单 |
-| 编辑记录 | GET /admin/edit/:id | 编辑指定记录表单 |
+| 编辑记录 | GET /admin/edit/:id | 编辑指定记录表单，并可手动翻译当前更新日志到中文翻译字段 |
 
 **功能清单：**
 - 登录/登出
 - 查看所有版本记录列表
 - 新增版本记录（手动填写所有字段）
 - 编辑已有记录（修改任意字段）
+- 在编辑页手动触发更新日志翻译，翻译结果填入 `changelog_zh` 表单字段，保存后生效
 - 删除记录（同时删除 `data/downloads/` 下对应的本地文件）
 - 指定某条记录为前台展示版本（is_featured）
 - 手动触发抓取
+- 在独立系统设置页配置在线翻译和 Telegram 转发
+- 使用后台按钮测试在线翻译、Telegram 机器人和频道发送
 
-### 6.5 认证模块
+### 6.5 展示格式化模块（formatters.py）
+
+- `format_filesize(value)` 用于前台、后台和 Telegram 通知的文件大小展示。
+- 原始 `filesize` 字段仍按源站返回内容保存到数据库，展示层额外使用 `filesize_display` 或格式化后的文本。
+- 小于 1KB 显示 B，1KB 到 1MB 显示 KB，1MB 到 1GB 显示 MB，1GB 以上显示 GB。
+- KB、MB、GB 保留 2 位小数。
+
+### 6.6 认证模块
 
 - 使用 Flask-Login 管理会话。
 - 密码使用 `werkzeug.security.generate_password_hash` / `check_password_hash` 进行哈希存储。
@@ -508,6 +651,27 @@ workupload.com 对非浏览器请求有反爬机制，访问文件页会返回 "
   python run.py init-admin --username admin --password your_password
   ```
 - 管理后台所有路由和 API 使用 `@login_required` 装饰器保护。
+
+### 6.7 Telegram 通知模块（telegram.py）
+
+- 无本地文件时使用 Telegram Bot API 的 `sendMessage` 接口发送 HTML 格式消息；有本地文件时使用 `sendDocument` 接口发送文件，并将同一份版本说明作为 caption。
+- 配置保存在 `settings` 表，管理后台系统设置页提供 Bot Token、机器人/会话 Chat ID、频道 Chat ID 以及两个独立转发开关。
+- 仅当抓取到新版本并插入 `versions` 表后自动通知；刷新已有版本不会重复转发。
+- 机器人转发与频道转发相互独立，可以只开启其中一个，也可以同时开启。
+- 频道转发要求机器人已加入频道并具备发消息权限。
+- Telegram 文本消息中，文件名、文件大小和 SHA256 使用等宽格式；文件大小会按 B、KB、MB、GB 自动换算并保留 2 位小数。
+- 文件发送依赖本地下载缓存，仅当 `data/downloads/<filename>` 存在时发送文件消息；文件不存在时退回文本通知。
+- 发送失败时记录 warning 日志，不影响版本入库和抓取状态。
+
+### 6.8 在线翻译模块（translator.py）
+
+- 支持 `off`、`deeplx`、`openai` 三种模式。
+- DeepLX 使用完整接口地址，例如 `https://api.deeplx.org/<api-key>/translate`，请求体包含 `text`、`source_lang=EN`、`target_lang=ZH`。
+- OpenAI 兼容模式请求 `/v1/chat/completions`，使用 Bearer API Key，并通过系统提示要求保留更新日志结构；Base URL 可填写服务根地址、`/v1` 或完整 `/v1/chat/completions`。
+- 翻译失败时记录 warning 日志并回退原文，不影响抓取、入库和 Telegram 转发。
+- 管理后台系统设置页提供翻译测试，会先保存当前配置，再调用 `/admin/api/translation-test` 返回测试文本的翻译结果。
+- 版本编辑页复用 `/admin/api/translation-test`，手动将当前 `changelog` 翻译后填入 `changelog_zh`，不自动提交数据库。
+- 前台 API 提供 `changelog_display`，优先返回中文翻译，没有中文翻译时返回原始更新日志。
 
 ---
 

@@ -3,127 +3,153 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ADIDM Check - IDM Crack Version Monitor</title>
+    <title>ADIDM Check - IDM Ali.Dbg 版本监控</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            background: linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            color: #e0e0e0;
+            color: #334155;
         }
         .container {
             text-align: center;
-            padding: 20px;
+            width: 100%;
+            max-width: 720px;
+            padding: 32px 20px;
         }
         h1 {
-            font-size: 28px;
-            margin-bottom: 8px;
-            color: #fff;
+            font-size: 32px;
+            margin-bottom: 10px;
+            color: #0F172A;
+            font-weight: 750;
         }
         .subtitle {
-            font-size: 14px;
-            color: #aaa;
-            margin-bottom: 32px;
+            font-size: 15px;
+            color: #64748B;
+            margin-bottom: 28px;
         }
         .card {
-            background: rgba(255,255,255,0.06);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 32px 40px;
-            max-width: 560px;
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 18px;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.05);
+            padding: 28px 34px;
+            max-width: 640px;
             margin: 0 auto;
             text-align: left;
         }
         .info-row {
             display: flex;
             justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
+            gap: 20px;
+            padding: 14px 0;
+            border-bottom: 1px solid #E2E8F0;
             font-size: 14px;
         }
         .info-row:last-child { border-bottom: none; }
         .info-label {
-            color: #888;
+            color: #64748B;
             flex-shrink: 0;
-            margin-right: 16px;
+            min-width: 72px;
+            font-weight: 500;
         }
         .info-value {
-            color: #e0e0e0;
+            color: #334155;
             word-break: break-all;
             text-align: right;
         }
         .info-value a {
-            color: #67a5ff;
+            color: #3B82F6;
             text-decoration: none;
+            font-weight: 500;
         }
-        .info-value a:hover { text-decoration: underline; }
+        .info-value a:hover { color: #2563EB; text-decoration: underline; }
         .version-badge {
             display: inline-block;
-            background: #4361ee;
-            color: #fff;
-            padding: 4px 14px;
-            border-radius: 20px;
+            background: #3B82F6;
+            color: #FFFFFF;
+            border: 1px solid #3B82F6;
+            padding: 5px 14px;
+            border-radius: 999px;
             font-weight: 600;
             font-size: 16px;
         }
         .sha256-text {
             font-family: "Courier New", Courier, monospace;
             font-size: 11px;
-            color: #bbb;
+            color: #334155;
         }
         .changelog-box {
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 8px;
+            background: #F1F5F9;
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
             padding: 16px;
             margin-top: 16px;
             text-align: left;
         }
         .changelog-title {
             font-size: 13px;
-            color: #888;
+            color: #64748B;
+            font-weight: 600;
             margin-bottom: 8px;
         }
         .changelog-content {
             font-family: "Courier New", Courier, monospace;
             font-size: 12px;
-            color: #ccc;
+            color: #475569;
             white-space: pre-wrap;
             word-break: break-word;
             line-height: 1.6;
             max-height: 300px;
             overflow-y: auto;
         }
-        .loading { color: #888; text-align: center; padding: 40px 0; }
-        .error-msg { color: #e63946; text-align: center; padding: 40px 0; }
+        .loading { color: #64748B; text-align: center; padding: 40px 0; }
+        .error-msg { color: #dc2626; text-align: center; padding: 40px 0; }
         .source-warn {
-            background: rgba(230,57,70,0.15);
-            border: 1px solid rgba(230,57,70,0.3);
-            border-radius: 8px;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 12px;
             padding: 10px 16px;
             margin-bottom: 16px;
             font-size: 13px;
-            color: #e63946;
+            color: #c2410c;
             text-align: center;
         }
         .footer {
-            margin-top: 32px;
+            margin-top: 24px;
             font-size: 12px;
-            color: #555;
+            color: #64748B;
+        }
+        .footer::before {
+            content: "";
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            margin-right: 8px;
+            border-radius: 999px;
+            background: #22C55E;
+            vertical-align: 1px;
+        }
+        @media (max-width: 560px) {
+            body { align-items: flex-start; }
+            .container { padding: 28px 16px; }
+            h1 { font-size: 28px; }
+            .card { padding: 22px 20px; border-radius: 16px; }
+            .info-row { flex-direction: column; gap: 6px; }
+            .info-value { text-align: left; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>ADIDM Check</h1>
-        <p class="subtitle">IDM Crack Version Monitor</p>
+        <p class="subtitle">IDM Ali.Dbg 版本监控</p>
         <div class="card" id="content">
-            <div class="loading" id="loading">Loading...</div>
+            <div class="loading" id="loading">加载中...</div>
         </div>
         <p class="footer">Auto-checked daily</p>
     </div>
@@ -141,25 +167,25 @@
                     var d = res.data;
                     var html = '';
                     if (res.last_check_status === 'source_error') {
-                        html += '<div class="source-warn">Source site check failed. Data below may be outdated.</div>';
+                        html += '<div class="source-warn">源站检测失败，以下数据可能不是最新。</div>';
                     }
-                    html += '<div class="info-row"><span class="info-label">Version</span><span class="info-value"><span class="version-badge">' + esc(d.version) + '</span></span></div>';
-                    html += '<div class="info-row"><span class="info-label">Filename</span><span class="info-value">' + esc(d.filename || '-') + '</span></div>';
-                    html += '<div class="info-row"><span class="info-label">Filesize</span><span class="info-value">' + esc(d.filesize || '-') + '</span></div>';
+                    html += '<div class="info-row"><span class="info-label">版本</span><span class="info-value"><span class="version-badge">' + esc(d.version) + '</span></span></div>';
+                    html += '<div class="info-row"><span class="info-label">文件名</span><span class="info-value">' + esc(d.filename || '-') + '</span></div>';
+                    html += '<div class="info-row"><span class="info-label">文件大小</span><span class="info-value">' + esc(d.filesize_display || d.filesize || '-') + '</span></div>';
                     html += '<div class="info-row"><span class="info-label">SHA256</span><span class="info-value sha256-text">' + esc(d.sha256 || '-') + '</span></div>';
-                    html += '<div class="info-row"><span class="info-label">Download</span><span class="info-value"><a href="' + esc(d.download_url) + '" target="_blank" rel="noopener">' + esc(d.download_url) + '</a></span></div>';
+                    html += '<div class="info-row"><span class="info-label">下载地址</span><span class="info-value"><a href="' + esc(d.download_url) + '" target="_blank" rel="noopener">' + esc(d.download_url) + '</a></span></div>';
                     if (d.direct_url) {
-                        html += '<div class="info-row"><span class="info-label">Direct Link</span><span class="info-value"><a href="' + esc(d.direct_url) + '" target="_blank" rel="noopener">' + esc(d.direct_url) + '</a></span></div>';
+                        html += '<div class="info-row"><span class="info-label">直连地址</span><span class="info-value"><a href="' + esc(d.direct_url) + '" target="_blank" rel="noopener">' + esc(d.direct_url) + '</a></span></div>';
                     }
-                    html += '<div class="info-row"><span class="info-label">Updated</span><span class="info-value">' + esc(d.created_at || '-') + '</span></div>';
-                    html += '<div class="info-row"><span class="info-label">Checked</span><span class="info-value">' + esc(res.last_checked || '-') + '</span></div>';
-                    if (d.changelog) {
-                        html += '<div class="changelog-box"><div class="changelog-title">Changelog</div><div class="changelog-content">' + esc(d.changelog) + '</div></div>';
+                    html += '<div class="info-row"><span class="info-label">更新日期</span><span class="info-value">' + esc(d.created_at || '-') + '</span></div>';
+                    html += '<div class="info-row"><span class="info-label">检测日期</span><span class="info-value">' + esc(res.last_checked || '-') + '</span></div>';
+                    if (d.changelog_display) {
+                        html += '<div class="changelog-box"><div class="changelog-title">更新日志</div><div class="changelog-content">' + esc(d.changelog_display) + '</div></div>';
                     }
                     el.innerHTML = html;
                 })
                 .catch(function() {
-                    document.getElementById('content').innerHTML = '<div class="error-msg">Failed to load data</div>';
+                    document.getElementById('content').innerHTML = '<div class="error-msg">数据加载失败</div>';
                 });
 
             function esc(s) {

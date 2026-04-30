@@ -10,6 +10,8 @@ import requests
 from curl_cffi import requests as cffi_requests
 
 from app.models import get_version_by_version_str, insert_version, set_setting, refresh_version
+from app.telegram import notify_new_version
+from app.translator import translate_changelog
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +249,11 @@ def scrape(db_path, scrape_url, user_agent, timeout):
         except Exception as e:
             logger.warning(f'Failed to fetch file details from {download_url}: {e}')
 
+    if file_info.get('changelog'):
+        changelog_zh = translate_changelog(db_path, file_info['changelog'], timeout)
+        if changelog_zh:
+            file_info['changelog_zh'] = changelog_zh
+
     # Step 4: Check if version already exists
     existing = get_version_by_version_str(db_path, version)
     if existing:
@@ -260,11 +267,20 @@ def scrape(db_path, scrape_url, user_agent, timeout):
             'version': version,
             'is_new': False,
             'is_updated': source_changed,
+            'data': refresh_data,
         }
 
     # Step 5: Insert new version
     data = {'version': version, 'download_url': download_url}
     data.update(file_info)
     insert_version(db_path, data)
+    telegram_result = notify_new_version(db_path, data, timeout)
     set_setting(db_path, 'last_check_status', 'success')
-    return {'status': 'success', 'version': version, 'is_new': True, 'is_updated': False}
+    return {
+        'status': 'success',
+        'version': version,
+        'is_new': True,
+        'is_updated': False,
+        'data': data,
+        'telegram': telegram_result,
+    }

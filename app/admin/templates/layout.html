@@ -11,6 +11,7 @@
         .navbar h1 { font-size: 18px; }
         .navbar a { color: #ccc; text-decoration: none; margin-left: 16px; font-size: 14px; }
         .navbar a:hover { color: #fff; }
+        .navbar a.active { color: #fff; font-weight: 600; }
         .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
         .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
         .btn { display: inline-block; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; text-decoration: none; color: #fff; }
@@ -22,6 +23,8 @@
         .btn-danger:hover { background: #d62839; }
         .btn-warning { background: #f4a261; }
         .btn-warning:hover { background: #e08e4a; }
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:hover { background: #5a6268; }
         .btn-sm { padding: 4px 10px; font-size: 12px; }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
         th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; }
@@ -29,8 +32,11 @@
         tr:hover { background: #f8f9fa; }
         .form-group { margin-bottom: 16px; }
         .form-group label { display: block; margin-bottom: 4px; font-weight: 500; font-size: 14px; }
-        .form-group input, .form-group textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: #fff; }
+        .form-group input[type="checkbox"] { width: auto; margin-right: 6px; }
         .form-group textarea { resize: vertical; min-height: 60px; }
+        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        .form-hint { color: #777; font-size: 12px; margin-top: 4px; }
         .error { color: #e63946; margin-bottom: 12px; font-size: 14px; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
         .badge-featured { background: #d4edda; color: #155724; }
@@ -44,7 +50,8 @@
         <h1>ADIDM Check 管理后台</h1>
         <div>
             <a href="{{ url_for('index') }}">前台首页</a>
-            <a href="{{ url_for('admin.dashboard') }}">记录列表</a>
+            <a href="{{ url_for('admin.dashboard') }}" class="{% if request.endpoint == 'admin.dashboard' %}active{% endif %}">记录列表</a>
+            <a href="{{ url_for('admin.settings') }}" class="{% if request.endpoint == 'admin.settings' %}active{% endif %}">系统设置</a>
             <a href="{{ url_for('admin.logout') }}">退出登录</a>
         </div>
     </nav>

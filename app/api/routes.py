@@ -1,5 +1,7 @@
 from flask import Blueprint, jsonify, current_app
 
+from app.formatters import format_filesize
+
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 
@@ -16,6 +18,8 @@ def latest():
         version['created_at'] = version['created_at'][:10]
     if version.get('updated_at'):
         version['updated_at'] = version['updated_at'][:10]
+    version['filesize_display'] = format_filesize(version.get('filesize'))
+    version['changelog_display'] = version.get('changelog_zh') or version.get('changelog')
     last_checked = get_setting(db_path, 'last_checked')
     if last_checked:
         last_checked = last_checked[:10]

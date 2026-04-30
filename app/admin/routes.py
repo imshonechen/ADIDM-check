@@ -2,11 +2,14 @@ from flask import Blueprint, render_template, request, jsonify, redirect, url_fo
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
 
+from app.formatters import format_filesize
 from app.models import (
     get_user_by_username, get_all_versions, get_version_by_id,
     insert_version, update_version, delete_version, set_featured,
-    get_setting
+    get_setting, set_settings
 )
+from app.telegram import get_telegram_settings, send_test_message
+from app.translator import get_translation_settings, translate_changelog
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin',
                      template_folder='templates')
@@ -47,10 +50,27 @@ def logout():
 def dashboard():
     db_path = current_app.config['DATABASE_PATH']
     versions = get_all_versions(db_path)
+    for version in versions:
+        version['filesize_display'] = format_filesize(version.get('filesize'))
+        version['changelog_display'] = version.get('changelog_zh') or version.get('changelog')
     last_checked = get_setting(db_path, 'last_checked')
     last_check_status = get_setting(db_path, 'last_check_status')
     return render_template('dashboard.html', versions=versions,
                            last_checked=last_checked, last_check_status=last_check_status)
+
+
+@admin_bp.route('/settings')
+@login_required
+def settings():
+    db_path = current_app.config['DATABASE_PATH']
+    telegram_settings = get_telegram_settings(db_path)
+    telegram_last_notify_status = get_setting(db_path, 'telegram_last_notify_status')
+    telegram_last_notify_label = _format_telegram_notify_status(telegram_last_notify_status)
+    translation_settings = get_translation_settings(db_path)
+    return render_template('settings.html',
+                           telegram_settings=telegram_settings,
+                           telegram_last_notify_label=telegram_last_notify_label,
+                           translation_settings=translation_settings)
 
 
 @admin_bp.route('/create', methods=['GET', 'POST'])
@@ -106,6 +126,9 @@ def api_login():
 def api_versions():
     db_path = current_app.config['DATABASE_PATH']
     versions = get_all_versions(db_path)
+    for version in versions:
+        version['filesize_display'] = format_filesize(version.get('filesize'))
+        version['changelog_display'] = version.get('changelog_zh') or version.get('changelog')
     return jsonify({'code': 0, 'data': versions})
 
 
@@ -173,3 +196,77 @@ def api_scrape():
         return jsonify({'code': 1, 'message': result.get('message', '源站异常'), 'data': result})
 
     return jsonify({'code': 0, 'message': '抓取完成', 'data': result})
+
+
+@admin_bp.route('/api/telegram-settings', methods=['POST'])
+@login_required
+def api_update_telegram_settings():
+    data = request.get_json(silent=True) or {}
+    db_path = current_app.config['DATABASE_PATH']
+    set_settings(db_path, {
+        'telegram_bot_token': data.get('bot_token', '').strip(),
+        'telegram_bot_chat_id': data.get('bot_chat_id', '').strip(),
+        'telegram_channel_chat_id': data.get('channel_chat_id', '').strip(),
+        'telegram_notify_bot_enabled': '1' if data.get('notify_bot_enabled') else '0',
+        'telegram_notify_channel_enabled': '1' if data.get('notify_channel_enabled') else '0',
+    })
+    return jsonify({'code': 0, 'message': 'Telegram 设置已保存'})
+
+
+@admin_bp.route('/api/translation-settings', methods=['POST'])
+@login_required
+def api_update_translation_settings():
+    data = request.get_json(silent=True) or {}
+    provider = data.get('provider', 'off')
+    if provider not in ('off', 'deeplx', 'openai'):
+        return jsonify({'code': 1, 'message': '翻译服务无效'}), 400
+
+    db_path = current_app.config['DATABASE_PATH']
+    set_settings(db_path, {
+        'translation_provider': provider,
+        'translation_deeplx_url': data.get('deeplx_url', '').strip(),
+        'translation_openai_base_url': data.get('openai_base_url', '').strip(),
+        'translation_openai_api_key': data.get('openai_api_key', '').strip(),
+        'translation_openai_model': data.get('openai_model', '').strip() or 'gpt-4o-mini',
+    })
+    return jsonify({'code': 0, 'message': '翻译设置已保存'})
+
+
+@admin_bp.route('/api/translation-test', methods=['POST'])
+@login_required
+def api_test_translation():
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({'code': 1, 'message': '测试文本不能为空'}), 400
+
+    db_path = current_app.config['DATABASE_PATH']
+    translation = translate_changelog(db_path, text, current_app.config['REQUEST_TIMEOUT'])
+    if not translation:
+        return jsonify({'code': 1, 'message': '翻译失败，请检查翻译服务配置'}), 400
+
+    return jsonify({'code': 0, 'message': '翻译测试成功', 'data': {'translation': translation}})
+
+
+@admin_bp.route('/api/telegram-test', methods=['POST'])
+@login_required
+def api_test_telegram():
+    data = request.get_json(silent=True) or {}
+    target = data.get('target', 'bot')
+    if target not in ('bot', 'channel'):
+        return jsonify({'code': 1, 'message': '测试目标无效'}), 400
+
+    db_path = current_app.config['DATABASE_PATH']
+    ok, message = send_test_message(db_path, target, current_app.config['REQUEST_TIMEOUT'])
+    if not ok:
+        return jsonify({'code': 1, 'message': message}), 400
+
+    return jsonify({'code': 0, 'message': message})
+
+
+def _format_telegram_notify_status(status):
+    labels = {
+        'success': '成功',
+        'partial_failed': '部分失败',
+    }
+    return labels.get(status, '未转发')

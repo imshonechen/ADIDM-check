@@ -16,7 +16,10 @@ def _run_scrape(app):
             config['REQUEST_TIMEOUT']
         )
         if result:
-            logger.info(f"Scrape result: version={result['version']}, is_new={result['is_new']}")
+            logger.info(
+                f"Scrape result: status={result.get('status')}, "
+                f"version={result.get('version')}, is_new={result.get('is_new')}"
+            )
         else:
             logger.warning('Scrape returned no result')
 

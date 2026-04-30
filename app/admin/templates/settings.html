@@ -1,0 +1,196 @@
+{% extends "layout.html" %}
+{% block title %}系统设置{% endblock %}
+{% block content %}
+<div class="top-bar">
+    <h2>系统设置</h2>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 16px;">更新日志翻译设置</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label>翻译服务</label>
+            <select id="translationProvider">
+                <option value="off" {% if translation_settings.provider == 'off' %}selected{% endif %}>关闭</option>
+                <option value="deeplx" {% if translation_settings.provider == 'deeplx' %}selected{% endif %}>DeepLX</option>
+                <option value="openai" {% if translation_settings.provider == 'openai' %}selected{% endif %}>OpenAI 兼容接口</option>
+            </select>
+            <div class="form-hint">抓取到英文更新日志后自动翻译为中文，失败时保留原文。</div>
+        </div>
+        <div class="form-group">
+            <label>DeepLX 接口地址</label>
+            <input type="text" id="translationDeeplxUrl" value="{{ translation_settings.deeplx_url }}" placeholder="https://api.deeplx.org/<api-key>/translate">
+            <div class="form-hint">兼容 DeepLX 的 /translate 接口。</div>
+        </div>
+        <div class="form-group">
+            <label>OpenAI Base URL</label>
+            <input type="text" id="translationOpenaiBaseUrl" value="{{ translation_settings.openai_base_url }}" placeholder="https://api.openai.com">
+            <div class="form-hint">可填写 Base URL、/v1 或完整 /v1/chat/completions 地址。</div>
+        </div>
+        <div class="form-group">
+            <label>OpenAI API Key</label>
+            <input type="password" id="translationOpenaiApiKey" value="{{ translation_settings.openai_api_key }}" placeholder="sk-...">
+        </div>
+        <div class="form-group">
+            <label>OpenAI 模型</label>
+            <input type="text" id="translationOpenaiModel" value="{{ translation_settings.openai_model }}" placeholder="gpt-4o-mini">
+        </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 18px;">
+        <button type="button" class="btn btn-primary" onclick="saveTranslationSettings()">保存翻译设置</button>
+    </div>
+
+    <div class="form-group">
+        <label>翻译测试文本</label>
+        <textarea id="translationTestText" rows="5" placeholder="输入一段英文更新日志进行测试">* Improved UI
+* Fixed bugs</textarea>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+        <button type="button" class="btn btn-secondary" onclick="testTranslation()">测试翻译</button>
+        <span id="translationTestStatus" style="color:#777; font-size:13px;"></span>
+    </div>
+    <div class="form-group" style="margin-top:16px;">
+        <label>测试结果</label>
+        <textarea id="translationTestResult" rows="5" readonly placeholder="翻译结果会显示在这里"></textarea>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 16px;">Telegram 转发设置</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label>Bot Token</label>
+            <input type="password" id="telegramBotToken" value="{{ telegram_settings.bot_token }}" placeholder="123456:ABC-DEF...">
+            <div class="form-hint">由 BotFather 创建机器人后获取。</div>
+        </div>
+        <div class="form-group">
+            <label>机器人 / 私聊 Chat ID</label>
+            <input type="text" id="telegramBotChatId" value="{{ telegram_settings.bot_chat_id }}" placeholder="例如: 123456789">
+            <div class="form-hint">用于发送到机器人会话、群组或私聊。</div>
+        </div>
+        <div class="form-group">
+            <label>频道 Chat ID</label>
+            <input type="text" id="telegramChannelChatId" value="{{ telegram_settings.channel_chat_id }}" placeholder="例如: @channel 或 -1001234567890">
+            <div class="form-hint">机器人需要是频道管理员并具备发消息权限。</div>
+        </div>
+        <div class="form-group">
+            <label>转发目标</label>
+            <label style="font-weight:400;"><input type="checkbox" id="telegramNotifyBot" {% if telegram_settings.notify_bot_enabled %}checked{% endif %}>新版本转发给机器人 / 会话</label>
+            <label style="font-weight:400; margin-top:8px;"><input type="checkbox" id="telegramNotifyChannel" {% if telegram_settings.notify_channel_enabled %}checked{% endif %}>新版本转发到频道</label>
+            <div class="form-hint">仅检测到新版本时自动转发；刷新旧版本不会重复转发。</div>
+        </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" onclick="saveTelegramSettings()">保存设置</button>
+        <button type="button" class="btn btn-secondary" onclick="testTelegram('bot')">测试机器人</button>
+        <button type="button" class="btn btn-secondary" onclick="testTelegram('channel')">测试频道</button>
+        <span style="color:#999; font-size:13px;">最近转发：{{ telegram_last_notify_label }}</span>
+    </div>
+</div>
+
+<script>
+function getTelegramSettingsPayload() {
+    return {
+        bot_token: document.getElementById('telegramBotToken').value,
+        bot_chat_id: document.getElementById('telegramBotChatId').value,
+        channel_chat_id: document.getElementById('telegramChannelChatId').value,
+        notify_bot_enabled: document.getElementById('telegramNotifyBot').checked,
+        notify_channel_enabled: document.getElementById('telegramNotifyChannel').checked
+    };
+}
+
+function getTranslationSettingsPayload() {
+    return {
+        provider: document.getElementById('translationProvider').value,
+        deeplx_url: document.getElementById('translationDeeplxUrl').value,
+        openai_base_url: document.getElementById('translationOpenaiBaseUrl').value,
+        openai_api_key: document.getElementById('translationOpenaiApiKey').value,
+        openai_model: document.getElementById('translationOpenaiModel').value
+    };
+}
+
+function saveTranslationSettings() {
+    return fetch('/admin/api/translation-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getTranslationSettingsPayload())
+    })
+        .then(r => r.json())
+        .then(data => {
+            alert(data.message || '保存完成');
+            return data;
+        })
+        .catch(() => alert('请求失败'));
+}
+
+function testTranslation() {
+    var statusEl = document.getElementById('translationTestStatus');
+    var resultEl = document.getElementById('translationTestResult');
+    statusEl.textContent = '正在保存设置并测试...';
+    resultEl.value = '';
+    fetch('/admin/api/translation-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getTranslationSettingsPayload())
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.code !== 0) {
+                statusEl.textContent = data.message || '保存失败';
+                return Promise.reject();
+            }
+            return fetch('/admin/api/translation-test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: document.getElementById('translationTestText').value })
+            });
+        })
+        .then(r => r.json())
+        .then(data => {
+            statusEl.textContent = data.message || '测试完成';
+            if (data.code === 0 && data.data) {
+                resultEl.value = data.data.translation || '';
+            }
+        })
+        .catch(() => {
+            if (!statusEl.textContent || statusEl.textContent === '正在保存设置并测试...') {
+                statusEl.textContent = '请求失败';
+            }
+        });
+}
+
+function saveTelegramSettings() {
+    fetch('/admin/api/telegram-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getTelegramSettingsPayload())
+    })
+        .then(r => r.json())
+        .then(data => alert(data.message || '保存完成'))
+        .catch(() => alert('请求失败'));
+}
+
+function testTelegram(target) {
+    fetch('/admin/api/telegram-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getTelegramSettingsPayload())
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.code !== 0) {
+                alert(data.message || '保存失败');
+                return Promise.reject();
+            }
+            return fetch('/admin/api/telegram-test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target: target })
+            });
+        })
+        .then(r => r.json())
+        .then(data => alert(data.message || '测试完成'))
+        .catch(() => {});
+}
+</script>
+{% endblock %}

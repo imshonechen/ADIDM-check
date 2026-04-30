@@ -6,13 +6,16 @@ ADIDM-Check 是一个基于 Flask 的 IDM Ali.Dbg 版本监控站点。它会定
 
 - 前台版本展示页：`/`
 - 前台最新版本 JSON API：`/api/latest`
-- 管理后台：登录、手动新增记录、编辑、删除、设置展示版本
+- 管理后台：登录、手动新增记录、编辑、删除、设置展示版本、系统设置
 - 管理后台手动触发抓取
+- 新版本可选择转发给 Telegram 机器人会话或频道，并在本地文件存在时以文件消息附带说明发送
 - APScheduler 每日定时抓取
 - SQLite 本地存储，无需额外数据库服务
 - 使用 `curl_cffi` 处理 Workupload Puzzle Captcha 流程
 - 下载文件缓存到 `data/downloads/`
 - 已下载文件支持 SHA256 校验，校验一致时跳过重复下载
+- 前台、后台和 Telegram 通知中的文件大小会自动换算为 B、KB、MB 或 GB
+- 更新日志支持在线自动翻译为中文，兼容 DeepLX 和 OpenAI `/v1/chat/completions`
 
 ## 技术栈
 
@@ -33,13 +36,16 @@ ADIDM-check/
 ├── app/
 │   ├── __init__.py          # Flask 应用工厂
 │   ├── config.py            # 运行配置
+│   ├── formatters.py        # 展示格式化工具
 │   ├── models.py            # SQLite 表结构与查询函数
 │   ├── scraper.py           # 上游抓取与 Workupload 处理
 │   ├── scheduler.py         # 每日抓取调度器
+│   ├── telegram.py          # Telegram 消息发送
+│   ├── translator.py        # 在线翻译
 │   ├── api/routes.py        # 前台 API 路由
 │   └── admin/
 │       ├── routes.py        # 管理后台页面与管理 API
-│       └── templates/       # 管理后台 Jinja2 模板
+│       └── templates/       # 管理后台 Jinja2 模板，包含记录列表、系统设置和编辑页
 ├── templates/index.html     # 前台页面
 ├── docs/technical-design.md # 技术设计文档
 ├── data/                    # 运行时数据库与下载文件，已被 Git 忽略
@@ -100,7 +106,7 @@ SQLite 当前包含三张表：
 
 - `versions`：版本信息、下载地址、SHA256、更新日志、展示标记、时间戳
 - `users`：管理员账号与密码哈希
-- `settings`：抓取状态，例如 `last_checked` 和 `last_check_status`
+- `settings`：抓取状态、Telegram 配置与在线翻译配置，例如 `last_checked`、`telegram_bot_token`、`translation_provider`
 
 ## 抓取流程
 
@@ -112,10 +118,25 @@ SQLite 当前包含三张表：
 2. 请求上游 XML 源。
 3. 提取 `Version` 和 `Download_URL`。
 4. 如果下载地址属于 Workupload，则使用 `curl_cffi` 完成 puzzle 流程，提取文件信息，获取直连地址，下载 ZIP，并读取 `Changelog.txt`。
-5. 如果版本不存在则插入新记录；如果版本已存在则刷新已有记录。
-6. 将 `last_check_status` 更新为 `success` 或 `source_error`。
+5. 如果已启用在线翻译，会将英文更新日志翻译为中文并保存到 `changelog_zh`。
+6. 如果版本不存在则插入新记录；如果版本已存在则刷新已有记录。
+7. 新版本入库后按后台开关转发给 Telegram 机器人会话或频道；如果文件已下载到 `data/downloads/`，会作为 Telegram 文件消息发送，并将版本说明放在文件 caption 中。
+8. 将 `last_check_status` 更新为 `success` 或 `source_error`。
 
 当源站异常或 Workupload 可选信息获取失败时，已有版本数据会被保留。
+
+文件大小原始值会保存在数据库中，前台、后台列表、API 的 `filesize_display` 字段和 Telegram 通知会自动换算显示：小于 1KB 显示 B，1KB 到 1MB 显示 KB，1MB 到 1GB 显示 MB，1GB 以上显示 GB，小数保留 2 位。
+
+## 在线翻译
+
+后台“系统设置 / 更新日志翻译设置”支持：
+
+- 关闭翻译
+- DeepLX：填写完整接口地址，例如 `https://api.deeplx.org/<api-key>/translate`
+- OpenAI 兼容接口：填写 Base URL、API Key 和模型名，程序会请求 `/v1/chat/completions`
+- 翻译测试：保存当前配置后，输入测试文本并立即查看翻译结果
+
+翻译失败不会影响抓取和入库。前台、后台和 Telegram 通知会优先展示 `changelog_zh`，没有中文翻译时回退到原始 `changelog`。版本编辑页也提供“翻译更新日志”按钮，可手动将当前更新日志翻译到中文翻译框，确认后再保存。
 
 ## API
 
@@ -133,9 +154,12 @@ SQLite 当前包含三张表：
     "download_url": "https://workupload.com/file/...",
     "filename": "IDM_6.4x_Crack_v20.6.zip",
     "filesize": "65850 (Byte)",
+    "filesize_display": "64.31 KB",
     "sha256": "...",
     "direct_url": "https://f51.workupload.com/download/...",
     "changelog": "...",
+    "changelog_zh": "...",
+    "changelog_display": "...",
     "created_at": "2026-03-26",
     "updated_at": "2026-03-26"
   },
@@ -161,6 +185,11 @@ SQLite 当前包含三张表：
 | --- | --- |
 | `GET /admin/login` | 登录页面 |
 | `GET /admin/dashboard` | 版本列表与抓取状态 |
+| `GET /admin/settings` | 系统设置，包含在线翻译与 Telegram 转发 |
+| `POST /admin/api/translation-settings` | 保存在线翻译设置 |
+| `POST /admin/api/translation-test` | 测试在线翻译 |
+| `POST /admin/api/telegram-settings` | 保存 Telegram 转发设置 |
+| `POST /admin/api/telegram-test` | 发送 Telegram 测试消息 |
 | `GET /admin/create` | 新增版本页面 |
 | `GET /admin/edit/<id>` | 编辑版本页面 |
 | `GET /admin/logout` | 退出登录 |
@@ -178,6 +207,10 @@ SQLite 当前包含三张表：
 | `DELETE` | `/admin/api/versions/<id>` | 删除版本并清理本地文件 |
 | `PUT` | `/admin/api/versions/<id>/feature` | 设置为前台展示版本 |
 | `POST` | `/admin/api/scrape` | 手动触发抓取 |
+| `POST` | `/admin/api/translation-settings` | 保存在线翻译设置 |
+| `POST` | `/admin/api/translation-test` | 测试在线翻译 |
+| `POST` | `/admin/api/telegram-settings` | 保存 Telegram 转发设置 |
+| `POST` | `/admin/api/telegram-test` | 测试 Telegram 发送 |
 
 JSON 响应遵循统一结构：
 
