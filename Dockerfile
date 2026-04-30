@@ -13,4 +13,4 @@ RUN mkdir -p /app/data
 
 EXPOSE 26300
 
-CMD ["waitress-serve", "--host=0.0.0.0", "--port=26300", "app:create_app"]
+CMD ["waitress-serve", "--call", "--host=0.0.0.0", "--port=26300", "app:create_app"]

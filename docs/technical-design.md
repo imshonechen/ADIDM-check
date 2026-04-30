@@ -895,6 +895,7 @@ services:
     image: ghcr.io/imshonechen/adidm-check:latest
     container_name: adidm-check
     restart: unless-stopped
+    command: ["waitress-serve", "--call", "--host=0.0.0.0", "--port=26300", "app:create_app"]
     ports:
       - "26300:26300"
     environment:
@@ -944,7 +945,7 @@ pip install waitress   # Windows
 gunicorn -w 2 -b 0.0.0.0:26300 "app:create_app()"
 
 # Windows
-waitress-serve --host=0.0.0.0 --port=26300 app:create_app
+waitress-serve --call --host=0.0.0.0 --port=26300 app:create_app
 ```
 
 建议使用 Nginx 反向代理，配合 systemd 管理进程。

@@ -284,6 +284,8 @@ docker compose exec adidm-check python run.py init-admin --username admin --pass
 
 生产环境请修改 `compose.yml` 中的 `SECRET_KEY`，并保留 `./data:/app/data` 卷挂载，数据库和下载文件都会保存在宿主机 `data/` 目录。
 
+`compose.yml` 使用 `waitress-serve --call ... app:create_app` 启动应用，`--call` 用于调用 Flask 应用工厂并取得真正的 WSGI app。
+
 升级镜像：
 
 ```bash
@@ -306,7 +308,7 @@ Windows 使用 Waitress：
 
 ```bash
 pip install waitress
-waitress-serve --host=0.0.0.0 --port=26300 app:create_app
+waitress-serve --call --host=0.0.0.0 --port=26300 app:create_app
 ```
 
 生产环境建议放在 Nginx 等反向代理后面，并配合 TLS、压缩和进程守护。
