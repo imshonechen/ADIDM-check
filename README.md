@@ -70,8 +70,10 @@ pip install -r requirements.txt
 初始化或更新管理员账号：
 
 ```bash
-python run.py init-admin --username admin --password your_password
+python run.py init-admin --username admin
 ```
+
+命令会交互式输入并确认密码，推荐在 Linux 服务器上使用这种方式，避免 `$`、`!`、`&` 等特殊字符被 shell 展开。也可以继续使用 `--password`，但包含特殊字符时请用单引号包住，例如 `--password 'your$password!'`。
 
 启动开发服务器：
 
@@ -279,8 +281,10 @@ docker compose up -d
 首次部署后初始化管理员账号：
 
 ```bash
-docker compose exec adidm-check python run.py init-admin --username admin --password your_password
+docker compose exec adidm-check python run.py init-admin --username admin
 ```
+
+命令会在容器内交互式输入并确认密码。若使用 `--password` 参数，Linux shell 中包含特殊字符的密码请用单引号包住，例如 `--password 'your$password!'`。
 
 生产环境请修改 `compose.yml` 中的 `SECRET_KEY`，并保留 `./data:/app/data` 卷挂载，数据库和下载文件都会保存在宿主机 `data/` 目录。
 

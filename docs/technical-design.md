@@ -746,10 +746,11 @@ workupload.com 对非浏览器请求有反爬机制，访问文件页会返回 "
 
 - 使用 Flask-Login 管理会话。
 - 密码使用 `werkzeug.security.generate_password_hash` / `check_password_hash` 进行哈希存储。
-- 首次运行时通过命令行初始化管理员账号：
+- 首次运行时通过命令行初始化管理员账号，默认交互式输入密码：
   ```bash
-  python run.py init-admin --username admin --password your_password
+  python run.py init-admin --username admin
   ```
+  `--password` 参数保留兼容旧用法；Linux shell 中密码包含特殊字符时需要用单引号包住。
 - 管理后台所有路由和 API 使用 `@login_required` 装饰器保护。
 
 ### 6.7 Telegram 通知模块（telegram.py）
@@ -879,7 +880,7 @@ chore: 添加 requirements.txt 依赖清单
 
 ```bash
 pip install -r requirements.txt
-python run.py init-admin --username admin --password your_password
+python run.py init-admin --username admin
 python run.py
 ```
 
@@ -914,7 +915,7 @@ docker compose up -d
 初始化管理员：
 
 ```bash
-docker compose exec adidm-check python run.py init-admin --username admin --password your_password
+docker compose exec adidm-check python run.py init-admin --username admin
 ```
 
 升级：
