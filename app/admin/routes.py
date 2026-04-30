@@ -8,6 +8,8 @@ from app.models import (
     insert_version, update_version, delete_version, set_featured,
     get_setting, set_settings
 )
+from app.scheduler import reschedule_daily_scrape
+from app.settings import get_scrape_settings, scrape_settings_to_storage, validate_scrape_settings
 from app.telegram import (
     build_message_editor_context,
     delete_tracked_message,
@@ -78,10 +80,12 @@ def settings():
     telegram_last_notify_status = get_setting(db_path, 'telegram_last_notify_status')
     telegram_last_notify_label = _format_telegram_notify_status(telegram_last_notify_status)
     translation_settings = get_translation_settings(db_path)
+    scrape_settings = get_scrape_settings(db_path, current_app.config)
     return render_template('settings.html',
                            telegram_settings=telegram_settings,
                            telegram_last_notify_label=telegram_last_notify_label,
-                           translation_settings=translation_settings)
+                           translation_settings=translation_settings,
+                           scrape_settings=scrape_settings)
 
 
 @admin_bp.route('/create', methods=['GET', 'POST'])
@@ -210,16 +214,31 @@ def api_set_featured(version_id):
 def api_scrape():
     from app.scraper import scrape
     config = current_app.config
+    settings = get_scrape_settings(config['DATABASE_PATH'], config)
     result = scrape(
         config['DATABASE_PATH'],
-        config['SCRAPE_URL'],
-        config['SCRAPE_USER_AGENT'],
-        config['REQUEST_TIMEOUT']
+        settings['scrape_url'],
+        settings['scrape_user_agent'],
+        settings['request_timeout']
     )
     if result.get('status') == 'source_error':
         return jsonify({'code': 1, 'message': result.get('message', '源站异常'), 'data': result})
 
     return jsonify({'code': 0, 'message': '抓取完成', 'data': result})
+
+
+@admin_bp.route('/api/scrape-settings', methods=['POST'])
+@login_required
+def api_update_scrape_settings():
+    data = request.get_json(silent=True) or {}
+    settings, error = validate_scrape_settings(data)
+    if error:
+        return jsonify({'code': 1, 'message': error}), 400
+
+    db_path = current_app.config['DATABASE_PATH']
+    set_settings(db_path, scrape_settings_to_storage(settings))
+    reschedule_daily_scrape(current_app._get_current_object())
+    return jsonify({'code': 0, 'message': '系统设置已保存'})
 
 
 @admin_bp.route('/api/telegram-settings', methods=['POST'])
@@ -268,7 +287,8 @@ def api_test_translation():
         return jsonify({'code': 1, 'message': '测试文本不能为空'}), 400
 
     db_path = current_app.config['DATABASE_PATH']
-    translation = translate_changelog(db_path, text, current_app.config['REQUEST_TIMEOUT'])
+    scrape_settings = get_scrape_settings(db_path, current_app.config)
+    translation = translate_changelog(db_path, text, scrape_settings['request_timeout'])
     if not translation:
         return jsonify({'code': 1, 'message': '翻译失败，请检查翻译服务配置'}), 400
 
@@ -284,7 +304,8 @@ def api_test_telegram():
         return jsonify({'code': 1, 'message': '测试目标无效'}), 400
 
     db_path = current_app.config['DATABASE_PATH']
-    ok, message = send_test_message(db_path, target, current_app.config['REQUEST_TIMEOUT'])
+    scrape_settings = get_scrape_settings(db_path, current_app.config)
+    ok, message = send_test_message(db_path, target, scrape_settings['request_timeout'])
     if not ok:
         return jsonify({'code': 1, 'message': message}), 400
 
@@ -302,12 +323,13 @@ def api_send_version_telegram_message(version_id, target_type):
         return jsonify({'code': 1, 'message': '消息内容不能为空'}), 400
 
     db_path = current_app.config['DATABASE_PATH']
+    scrape_settings = get_scrape_settings(db_path, current_app.config)
     version = get_version_by_id(db_path, version_id)
     if not version:
         return jsonify({'code': 1, 'message': '版本记录不存在'}), 404
 
     ok, message, row_id = send_version_message_text(
-        db_path, version['id'], target_type, text, current_app.config['REQUEST_TIMEOUT']
+        db_path, version['id'], target_type, text, scrape_settings['request_timeout']
     )
     if not ok:
         return jsonify({'code': 1, 'message': message, 'data': {'id': row_id}}), 400
@@ -317,7 +339,9 @@ def api_send_version_telegram_message(version_id, target_type):
 @admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/edit', methods=['POST'])
 @login_required
 def api_edit_version_telegram_message(version_id, target_type):
-    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    db_path = current_app.config['DATABASE_PATH']
+    timeout = get_scrape_settings(db_path, current_app.config)['request_timeout']
+    context = build_message_editor_context(db_path, version_id, target_type)
     if not context or not context.get('message'):
         return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
     data = request.get_json(silent=True) or {}
@@ -326,8 +350,7 @@ def api_edit_version_telegram_message(version_id, target_type):
         return jsonify({'code': 1, 'message': '消息内容不能为空'}), 400
 
     ok, message = edit_tracked_message(
-        current_app.config['DATABASE_PATH'], context['message']['id'], text,
-        current_app.config['REQUEST_TIMEOUT']
+        db_path, context['message']['id'], text, timeout
     )
     if not ok:
         return jsonify({'code': 1, 'message': message}), 400
@@ -337,12 +360,13 @@ def api_edit_version_telegram_message(version_id, target_type):
 @admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/sync', methods=['POST'])
 @login_required
 def api_sync_version_telegram_message(version_id, target_type):
-    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    db_path = current_app.config['DATABASE_PATH']
+    timeout = get_scrape_settings(db_path, current_app.config)['request_timeout']
+    context = build_message_editor_context(db_path, version_id, target_type)
     if not context or not context.get('message'):
         return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
     ok, message = sync_tracked_message(
-        current_app.config['DATABASE_PATH'], context['message']['id'],
-        current_app.config['REQUEST_TIMEOUT']
+        db_path, context['message']['id'], timeout
     )
     if not ok:
         return jsonify({'code': 1, 'message': message}), 400
@@ -352,12 +376,13 @@ def api_sync_version_telegram_message(version_id, target_type):
 @admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/delete', methods=['POST'])
 @login_required
 def api_delete_version_telegram_message(version_id, target_type):
-    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    db_path = current_app.config['DATABASE_PATH']
+    timeout = get_scrape_settings(db_path, current_app.config)['request_timeout']
+    context = build_message_editor_context(db_path, version_id, target_type)
     if not context or not context.get('message'):
         return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
     ok, message = delete_tracked_message(
-        current_app.config['DATABASE_PATH'], context['message']['id'],
-        current_app.config['REQUEST_TIMEOUT']
+        db_path, context['message']['id'], timeout
     )
     if not ok:
         return jsonify({'code': 1, 'message': message}), 400
@@ -367,14 +392,15 @@ def api_delete_version_telegram_message(version_id, target_type):
 @admin_bp.route('/api/versions/<int:version_id>/telegram/<target_type>/resend', methods=['POST'])
 @login_required
 def api_resend_version_telegram_message(version_id, target_type):
-    context = build_message_editor_context(current_app.config['DATABASE_PATH'], version_id, target_type)
+    db_path = current_app.config['DATABASE_PATH']
+    timeout = get_scrape_settings(db_path, current_app.config)['request_timeout']
+    context = build_message_editor_context(db_path, version_id, target_type)
     if not context or not context.get('message'):
         return jsonify({'code': 1, 'message': '消息记录不存在'}), 404
     data = request.get_json(silent=True) or {}
     text = (data.get('text') or '').strip() or context['message_text']
     ok, message = resend_tracked_message_text(
-        current_app.config['DATABASE_PATH'], context['message']['id'], text,
-        current_app.config['REQUEST_TIMEOUT']
+        db_path, context['message']['id'], text, timeout
     )
     if not ok:
         return jsonify({'code': 1, 'message': message}), 400
@@ -391,7 +417,8 @@ def api_translate_version(version_id):
     if not version.get('changelog'):
         return jsonify({'code': 1, 'message': '该版本没有可翻译的更新日志'}), 400
 
-    translation = translate_changelog(db_path, version['changelog'], current_app.config['REQUEST_TIMEOUT'])
+    scrape_settings = get_scrape_settings(db_path, current_app.config)
+    translation = translate_changelog(db_path, version['changelog'], scrape_settings['request_timeout'])
     if not translation:
         return jsonify({'code': 1, 'message': '翻译失败，请检查翻译服务配置'}), 400
 

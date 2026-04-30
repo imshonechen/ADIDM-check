@@ -860,17 +860,25 @@ chore: 添加 requirements.txt 依赖清单
 
 ---
 
-## 9. 配置项（config.py）
+## 9. 配置项
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| SECRET_KEY | 随机生成 | Flask 会话密钥 |
-| DATABASE_PATH | data/adidm.db | 数据库文件路径 |
-| SCRAPE_URL | https://idm.0dy.ir/ | 抓取目标地址 |
-| SCRAPE_USER_AGENT | Mozilla/5.0 (Windows NT 6.1; ...) | 请求 User-Agent |
-| SCRAPE_HOUR | 8 | 每天抓取时间（小时） |
-| SCRAPE_MINUTE | 0 | 每天抓取时间（分钟） |
-| REQUEST_TIMEOUT | 30 | HTTP 请求超时（秒） |
+| SECRET_KEY | change-this-to-a-random-secret-key | Flask 会话密钥，可通过环境变量覆盖 |
+| DATABASE_PATH | data/adidm.db | 数据库文件路径，可通过环境变量覆盖；Compose 默认 `/app/data/adidm.db` |
+| PORT | 26300 | 开发服务器端口，可通过环境变量覆盖；Compose 用于宿主机端口映射 |
+
+抓取相关配置从后台 `/admin/settings` 的“系统设置”标签页维护，并存储在 `settings` 表：
+
+| 设置项 | 默认值 | 说明 |
+|--------|--------|------|
+| scrape_url | https://idm.0dy.ir/ | 抓取目标地址 |
+| scrape_user_agent | Mozilla/5.0 (Windows NT 6.1; ...) | 请求 User-Agent |
+| scrape_hour | 8 | 每天抓取时间（小时，0-23） |
+| scrape_minute | 0 | 每天抓取时间（分钟，0-59） |
+| request_timeout | 30 | HTTP 请求超时（秒，1-300） |
+
+保存系统设置后，后台会调用 `reschedule_daily_scrape(app)` 重置 APScheduler 的 `daily_scrape` 任务；手动检测、Telegram `/check`、Telegram 消息操作和在线翻译会读取最新 `request_timeout`。
 
 ---
 
@@ -896,11 +904,13 @@ services:
     image: ghcr.io/imshonechen/adidm-check:latest
     container_name: adidm-check
     restart: unless-stopped
-    command: ["waitress-serve", "--call", "--host=0.0.0.0", "--port=26300", "app:create_app"]
+    command: ["waitress-serve", "--call", "--host=0.0.0.0", "--port=${PORT:-26300}", "app:create_app"]
     ports:
-      - "26300:26300"
+      - "${PORT:-26300}:${PORT:-26300}"
     environment:
-      SECRET_KEY: "change-this-to-a-random-secret-key"
+      SECRET_KEY: "${SECRET_KEY:-change-this-to-a-random-secret-key}"
+      DATABASE_PATH: "${DATABASE_PATH:-/app/data/adidm.db}"
+      PORT: "${PORT:-26300}"
     volumes:
       - ./data:/app/data
 ```

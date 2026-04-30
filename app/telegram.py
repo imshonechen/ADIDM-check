@@ -24,6 +24,7 @@ from app.models import (
     update_version,
     upsert_telegram_message,
 )
+from app.settings import get_scrape_settings
 from app.translator import translate_changelog
 
 logger = logging.getLogger(__name__)
@@ -563,10 +564,11 @@ def _poll_once(app, bot_token, offset):
 
 def handle_command(app, bot_token, message, text):
     db_path = app.config['DATABASE_PATH']
+    timeout = get_scrape_settings(db_path, app.config)['request_timeout']
     chat_id = str(message.get('chat', {}).get('id', ''))
     user_id = str(message.get('from', {}).get('id', ''))
     if not _is_command_allowed(db_path, chat_id, user_id):
-        send_message(bot_token, chat_id, '没有权限执行该命令。', app.config['REQUEST_TIMEOUT'])
+        send_message(bot_token, chat_id, '没有权限执行该命令。', timeout)
         return
 
     parts = text.split(maxsplit=1)
@@ -584,7 +586,7 @@ def handle_command(app, bot_token, message, text):
         reply = _command_translate(app, arg)
     else:
         reply = '未知命令，发送 /help 查看可用命令。'
-    send_message(bot_token, chat_id, reply, app.config['REQUEST_TIMEOUT'])
+    send_message(bot_token, chat_id, reply, timeout)
 
 
 def _command_status(db_path):
@@ -598,8 +600,9 @@ def _command_status(db_path):
 def _command_check(app):
     from app.scraper import scrape
     config = app.config
-    result = scrape(config['DATABASE_PATH'], config['SCRAPE_URL'],
-                    config['SCRAPE_USER_AGENT'], config['REQUEST_TIMEOUT'])
+    settings = get_scrape_settings(config['DATABASE_PATH'], config)
+    result = scrape(config['DATABASE_PATH'], settings['scrape_url'],
+                    settings['scrape_user_agent'], settings['request_timeout'])
     if result.get('status') == 'source_error':
         return result.get('message', '检测失败')
     state = '新版本' if result.get('is_new') else '无新版本'
@@ -610,18 +613,19 @@ def _command_check(app):
 
 def _command_translate(app, version_arg):
     db_path = app.config['DATABASE_PATH']
+    timeout = get_scrape_settings(db_path, app.config)['request_timeout']
     version = get_version_by_version_str(db_path, version_arg) if version_arg else get_latest_version(db_path)
     if not version:
         return '版本记录不存在。'
     changelog = version.get('changelog')
     if not changelog:
         return '该版本没有可翻译的更新日志。'
-    translated = translate_changelog(db_path, changelog, app.config['REQUEST_TIMEOUT'])
+    translated = translate_changelog(db_path, changelog, timeout)
     if not translated:
         return '翻译失败，请检查翻译配置。'
     update_version(db_path, version['id'], {'changelog_zh': translated})
     for row in get_telegram_messages(db_path, version['id']):
-        sync_tracked_message(db_path, row['id'], app.config['REQUEST_TIMEOUT'])
+        sync_tracked_message(db_path, row['id'], timeout)
     return f"版本 {version['version']} 更新日志已翻译，并已同步 Telegram 消息。"
 
 

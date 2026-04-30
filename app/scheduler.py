@@ -1,5 +1,8 @@
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+from app.settings import get_scrape_settings
 
 logger = logging.getLogger(__name__)
 _scheduler = None
@@ -9,11 +12,12 @@ def _run_scrape(app):
     with app.app_context():
         from app.scraper import scrape
         config = app.config
+        settings = get_scrape_settings(config['DATABASE_PATH'], config)
         result = scrape(
             config['DATABASE_PATH'],
-            config['SCRAPE_URL'],
-            config['SCRAPE_USER_AGENT'],
-            config['REQUEST_TIMEOUT']
+            settings['scrape_url'],
+            settings['scrape_user_agent'],
+            settings['request_timeout']
         )
         if result:
             logger.info(
@@ -30,13 +34,30 @@ def start_scheduler(app):
         return
 
     _scheduler = BackgroundScheduler()
+    settings = get_scrape_settings(app.config['DATABASE_PATH'], app.config)
     _scheduler.add_job(
         _run_scrape,
-        'cron',
-        hour=app.config['SCRAPE_HOUR'],
-        minute=app.config['SCRAPE_MINUTE'],
+        CronTrigger(hour=settings['scrape_hour'], minute=settings['scrape_minute']),
         args=[app],
         id='daily_scrape'
     )
     _scheduler.start()
-    logger.info(f"Scheduler started: daily scrape at {app.config['SCRAPE_HOUR']:02d}:{app.config['SCRAPE_MINUTE']:02d}")
+    logger.info(
+        f"Scheduler started: daily scrape at "
+        f"{settings['scrape_hour']:02d}:{settings['scrape_minute']:02d}"
+    )
+
+
+def reschedule_daily_scrape(app):
+    if _scheduler is None:
+        return
+
+    settings = get_scrape_settings(app.config['DATABASE_PATH'], app.config)
+    _scheduler.reschedule_job(
+        'daily_scrape',
+        trigger=CronTrigger(hour=settings['scrape_hour'], minute=settings['scrape_minute'])
+    )
+    logger.info(
+        f"Scheduler rescheduled: daily scrape at "
+        f"{settings['scrape_hour']:02d}:{settings['scrape_minute']:02d}"
+    )

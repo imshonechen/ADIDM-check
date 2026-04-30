@@ -89,18 +89,23 @@ python run.py
 
 ## 配置说明
 
-配置集中在 `app/config.py`。
+基础运行配置集中在 `app/config.py`，可通过环境变量或 Compose 变量覆盖。抓取相关配置可在后台 `/admin/settings` 的“系统设置”标签页维护。
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SECRET_KEY` | `change-this-to-a-random-secret-key` | Flask 会话密钥，可通过环境变量 `SECRET_KEY` 覆盖 |
-| `DATABASE_PATH` | `data/adidm.db` | SQLite 数据库路径 |
-| `SCRAPE_URL` | `https://idm.0dy.ir/` | 上游 XML 源地址 |
-| `SCRAPE_USER_AGENT` | IE11 风格 UA 字符串 | 请求上游源时使用的 User-Agent |
-| `SCRAPE_HOUR` | `8` | 每日抓取小时 |
-| `SCRAPE_MINUTE` | `0` | 每日抓取分钟 |
-| `REQUEST_TIMEOUT` | `30` | 外部请求超时时间，单位秒 |
-| `PORT` | `26300` | 开发服务器端口 |
+| `DATABASE_PATH` | `data/adidm.db` | SQLite 数据库路径，Compose 默认 `/app/data/adidm.db` |
+| `PORT` | `26300` | 开发服务器端口，Compose 同时用于宿主机端口映射 |
+
+后台系统设置：
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| 抓取地址 | `https://idm.0dy.ir/` | 上游 XML 源地址 |
+| User-Agent | IE11 风格 UA 字符串 | 请求上游源时使用 |
+| 每日抓取小时 | `8` | 24 小时制，0-23 |
+| 每日抓取分钟 | `0` | 0-59，保存后会重置定时任务 |
+| 请求超时 | `30` | 外部请求超时时间，单位秒 |
 
 生产环境请务必设置强随机 `SECRET_KEY`。
 
@@ -286,7 +291,15 @@ docker compose exec adidm-check python run.py init-admin --username admin
 
 命令会在容器内交互式输入并确认密码。若使用 `--password` 参数，Linux shell 中包含特殊字符的密码请用单引号包住，例如 `--password 'your$password!'`。
 
-生产环境请修改 `compose.yml` 中的 `SECRET_KEY`，并保留 `./data:/app/data` 卷挂载，数据库和下载文件都会保存在宿主机 `data/` 目录。
+生产环境请通过环境变量或 `.env` 修改 `SECRET_KEY`，并保留 `./data:/app/data` 卷挂载，数据库和下载文件都会保存在宿主机 `data/` 目录。
+
+`compose.yml` 支持这些变量：
+
+```env
+SECRET_KEY=change-this-to-a-random-secret-key
+DATABASE_PATH=/app/data/adidm.db
+PORT=26300
+```
 
 `compose.yml` 使用 `waitress-serve --call ... app:create_app` 启动应用，`--call` 用于调用 Flask 应用工厂并取得真正的 WSGI app。
 
